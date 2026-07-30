@@ -13,6 +13,7 @@ import { MONETIZATION } from '@/constants/config';
 import type {
   BillingPeriod,
   ItemKind,
+  Json,
   Subscription,
   VaultItem,
   Warranty,
@@ -105,7 +106,7 @@ export type MockNewItem = {
   notes?: string | null;
   localImageUri?: string | null;
   warranty?: { expiresOn: string; durationMonths?: number | null } | null;
-  ocr?: { raw: unknown; confidence: number } | null;
+  ocr?: { raw: Json; confidence: number } | null;
 };
 
 export async function mockCreateItem(input: MockNewItem): Promise<VaultItem> {

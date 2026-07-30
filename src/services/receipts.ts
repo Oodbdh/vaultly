@@ -1,6 +1,13 @@
 import { USE_MOCK_DATA } from '@/constants/config';
 import { supabase, isQuotaError } from '@/lib/supabase';
-import type { BillingPeriod, ItemKind, Subscription, VaultItem, Warranty } from '@/lib/database.types';
+import type {
+  BillingPeriod,
+  ItemKind,
+  Json,
+  Subscription,
+  VaultItem,
+  Warranty,
+} from '@/lib/database.types';
 import { QuotaExceededError } from '@/lib/errors';
 import type { ListItem } from '@/lib/types';
 import {
@@ -26,7 +33,8 @@ export type NewItemInput = {
   /** local file uri from the picker/camera; uploaded before insert */
   localImageUri?: string | null;
   warranty?: { expiresOn: string; durationMonths?: number | null } | null;
-  ocr?: { raw: unknown; confidence: number } | null;
+  /** `raw` is persisted to the `jsonb` column, so it must be JSON-serialisable. */
+  ocr?: { raw: Json; confidence: number } | null;
 };
 
 // Re-exported so call sites keep importing it from the service they use.
@@ -46,13 +54,9 @@ export async function listItems(userId: string, kind?: ItemKind): Promise<ListIt
   if (error) throw error;
 
   return (data ?? []).map((row) => {
-    // `database.types.ts` is hand-written with empty `Relationships`, so
-    // supabase-js cannot resolve these embeds and types them as query errors.
-    // Regenerating from the live schema (`npm run db:types`) removes the cast.
-    const { warranties, subscriptions, ...item } = row as unknown as VaultItem & {
-      warranties?: { expires_on: string }[] | null;
-      subscriptions?: { next_renewal: string; amount: number; period: BillingPeriod }[] | null;
-    };
+    // The embeds resolve through the generated `Relationships`, so supabase-js
+    // infers `warranties` / `subscriptions` as arrays here without a cast.
+    const { warranties, subscriptions, ...item } = row;
     return {
       ...item,
       warranty_expires_on: warranties?.[0]?.expires_on ?? null,

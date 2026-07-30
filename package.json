@@ -13,7 +13,7 @@
     "db:check": "node scripts/check-supabase.mjs",
     "db:smoke": "node scripts/smoke-supabase.mjs",
     "db:push": "supabase db push",
-    "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",
+    "db:types": "supabase gen types typescript --linked > src/lib/database.generated.ts",
     "fn:check": "node scripts/check-function.mjs",
     "fn:deploy": "supabase functions deploy analyze-receipt --use-api",
     "fn:logs": "supabase functions logs analyze-receipt"
