@@ -1,0 +1,5 @@
+{
+  "CFBundleDisplayName": "Vaultly",
+  "NSCameraUsageDescription": "Vaultly utilise l'appareil photo pour scanner vos reçus.",
+  "NSPhotoLibraryUsageDescription": "Vaultly a besoin d'accéder à vos photos pour joindre des reçus."
+}

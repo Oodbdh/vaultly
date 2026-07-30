@@ -1,0 +1,18 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    // Tests run on Node's built-in runner, which strips types natively and so
+    // needs the explicit `.ts` extension on relative imports.
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
+  // Edge Functions are Deno, not React Native — they have their own globals and
+  // jsr: imports, and are type-checked by the Supabase CLI on deploy.
+  "exclude": ["node_modules", "supabase/functions"]
+}

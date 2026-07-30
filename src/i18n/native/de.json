@@ -1,0 +1,5 @@
+{
+  "CFBundleDisplayName": "Vaultly",
+  "NSCameraUsageDescription": "Vaultly verwendet die Kamera, um deine Belege zu scannen.",
+  "NSPhotoLibraryUsageDescription": "Vaultly benötigt Zugriff, um Belegfotos anzuhängen."
+}

@@ -1,0 +1,5 @@
+{
+  "CFBundleDisplayName": "فولتلي",
+  "NSCameraUsageDescription": "يستخدم فولتلي الكاميرا لمسح فواتيرك.",
+  "NSPhotoLibraryUsageDescription": "يحتاج فولتلي إلى الوصول لإضافة صور الفواتير."
+}
