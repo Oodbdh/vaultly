@@ -26,7 +26,23 @@ export type ReceiptExtraction = {
   warrantyMonths: number | null;    // stated term, if the receipt gives one
   category: string | null;
   lineItemCount: number | null;
-  confidence: number;               // 0..1, self-reported by the model
+  /**
+   * 0..1 overall. With the edge pipeline this is the mean of the per-field
+   * scores rather than a self-report, so it reflects agreement between the
+   * deterministic rules and the model, not the model's own optimism.
+   */
+  confidence: number;
+
+  // ── Cross-validation extras (edge pipeline only) ─────────────────────────
+  // Extracted to corroborate the fields above — a VAT amount that matches
+  // total − subtotal is strong evidence the total was read correctly. There are
+  // no database columns for these and no screen renders them; they are optional
+  // so the mock and the legacy Gemini provider remain valid without them.
+  invoiceNumber?: string | null;
+  vatAmount?: number | null;
+  paymentMethod?: string | null;
+  /** Per-field 0-100 scores. Anything below 70 was already nulled server-side. */
+  fieldConfidence?: Record<string, number> | null;
 };
 
 export type ExtractionResult =
@@ -158,6 +174,13 @@ export function normalise(raw: Partial<ReceiptExtraction>): ReceiptExtraction {
     category: canonicalCategory(raw.category),
     lineItemCount: num(raw.lineItemCount),
     confidence: Math.min(1, Math.max(0, num(raw.confidence) ?? 0)),
+    invoiceNumber: str(raw.invoiceNumber),
+    vatAmount: num(raw.vatAmount),
+    paymentMethod: str(raw.paymentMethod),
+    fieldConfidence:
+      raw.fieldConfidence && typeof raw.fieldConfidence === 'object'
+        ? (raw.fieldConfidence as Record<string, number>)
+        : null,
   };
 }
 

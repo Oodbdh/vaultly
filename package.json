@@ -9,7 +9,7 @@
     "ios": "expo run:ios",
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"src/**/*.test.ts\"",
+    "test": "node --test \"src/**/*.test.ts\" \"supabase/functions/**/*.test.ts\"",
     "db:check": "node scripts/check-supabase.mjs",
     "db:smoke": "node scripts/smoke-supabase.mjs",
     "db:push": "supabase db push",
