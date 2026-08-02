@@ -44,7 +44,8 @@
     "backToSignIn": "Volver a iniciar sesión",
     "verifying": "Confirmando tu correo…",
     "verified": "Todo listo",
-    "verifyFailed": "Ese enlace no funcionó"
+    "verifyFailed": "Ese enlace no funcionó",
+    "oneMoreStep": "Un paso más"
   },
   "dashboard": {
     "greeting": "Hola, {{name}}",

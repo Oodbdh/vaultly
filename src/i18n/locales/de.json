@@ -44,7 +44,8 @@
     "backToSignIn": "Zurück zur Anmeldung",
     "verifying": "E-Mail wird bestätigt…",
     "verified": "Alles erledigt",
-    "verifyFailed": "Dieser Link hat nicht funktioniert"
+    "verifyFailed": "Dieser Link hat nicht funktioniert",
+    "oneMoreStep": "Nur noch ein Schritt"
   },
   "dashboard": {
     "greeting": "Hallo {{name}}",

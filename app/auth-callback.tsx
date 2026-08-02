@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as Linking from 'expo-linking';
 
@@ -15,10 +15,18 @@ import { useAuthStore } from '@/store/authStore';
  * Landing screen for every auth deep link — email confirmation, password
  * reset, OAuth return.
  *
- * `Linking.useURL()` is used rather than route params because the implicit
- * flow puts its tokens in the URL *fragment*, which the router does not expose.
- * It also covers both entry paths: a cold start from a tapped link, and a link
- * arriving while the app is already open.
+ * **Route params are the primary source, not `Linking.useURL()`.** The hook
+ * resolves `getInitialURL()` (the URL that *launched* the app) and separately
+ * listens for `url` events; when the link arrives while the app is already
+ * running, the event fires before that listener attaches, so the hook keeps
+ * reporting the launch URL. Under the dev launcher that is permanently
+ * `vaultly://expo-development-client/?url=…`, and device traces showed it
+ * winning on every single mount — the `code` was visible in route params while
+ * `completeAuthFromUrl` was handed the stale URL and returned `ignored`, so
+ * `exchangeCodeForSession` was never called.
+ *
+ * `useURL()` is kept as the fallback because the implicit flow puts its tokens
+ * in the URL *fragment*, which the router does not expose as params.
  */
 export default function AuthCallback() {
   const { t } = useTranslation();
@@ -26,19 +34,33 @@ export default function AuthCallback() {
   const type = typeScale(locale);
   const router = useRouter();
   const url = Linking.useURL();
+  const params = useLocalSearchParams();
 
-  const [state, setState] = useState<'working' | 'done' | 'error'>('working');
+  /** The link as the router parsed it, rebuilt into a URL for the shared handler. */
+  const paramUrl = useMemo(() => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      const s = Array.isArray(v) ? v[0] : v;
+      if (typeof s === 'string' && s) qs.set(k, s);
+    }
+    const q = qs.toString();
+    return q ? `vaultly://auth-callback?${q}` : null;
+  }, [params]);
+
+  const callbackUrl = paramUrl ?? url;
+
+  const [state, setState] = useState<'working' | 'done' | 'notice' | 'error'>('working');
   const [message, setMessage] = useState<string | null>(null);
   // A link must only be redeemed once: the code is single-use, and a second
   // exchange would fail and overwrite the success we just had.
   const handled = useRef(false);
 
   useEffect(() => {
-    if (!url || handled.current) return;
+    if (!callbackUrl || handled.current) return;
     handled.current = true;
 
     void (async () => {
-      const result = await completeAuthFromUrl(url);
+      const result = await completeAuthFromUrl(callbackUrl);
       if (result.status === 'signed-in') {
         // An email-change link arrives here too. The address is a claim inside
         // the token, so without reissuing it the app keeps showing the old one
@@ -50,6 +72,15 @@ export default function AuthCallback() {
         router.replace('/(tabs)/home');
         return;
       }
+      // The link worked but there is more for the user to do — most often the
+      // second half of a secure email change. Stop here and say so; bouncing to
+      // Home is what made this look like nothing had happened.
+      if (result.status === 'notice') {
+        await useAuthStore.getState().refreshUser();
+        setState('notice');
+        setMessage(result.message);
+        return;
+      }
       if (result.status === 'ignored') {
         router.replace('/(tabs)/home');
         return;
@@ -57,7 +88,7 @@ export default function AuthCallback() {
       setState('error');
       setMessage(result.message);
     })();
-  }, [url, router]);
+  }, [callbackUrl, router]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -86,6 +117,28 @@ export default function AuthCallback() {
             <Text style={[type.heading, { color: colors.text, textAlign: 'center' }]}>
               {t('auth.verified')}
             </Text>
+          </>
+        ) : null}
+
+        {state === 'notice' ? (
+          <>
+            <Ionicons name="mail-unread" size={44} color={colors.primary} />
+            <Text style={[type.heading, { color: colors.text, textAlign: 'center' }]}>
+              {t('auth.oneMoreStep')}
+            </Text>
+            {/* GoTrue's own wording. It names the remaining action precisely
+                ("confirm link sent to the other email"), which is better than a
+                generic string that could drift from server behaviour. */}
+            {message ? (
+              <Text style={[type.body, { color: colors.textMuted, textAlign: 'center' }]}>
+                {message}
+              </Text>
+            ) : null}
+            <Button
+              label={t('common.continue')}
+              onPress={() => router.replace('/(tabs)/home')}
+              style={{ alignSelf: 'stretch' }}
+            />
           </>
         ) : null}
 

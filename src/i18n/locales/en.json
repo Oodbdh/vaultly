@@ -44,7 +44,8 @@
     "backToSignIn": "Back to sign in",
     "verifying": "Confirming your email…",
     "verified": "You're all set",
-    "verifyFailed": "That link didn't work"
+    "verifyFailed": "That link didn't work",
+    "oneMoreStep": "One more step"
   },
   "dashboard": {
     "greeting": "Hi {{name}}",

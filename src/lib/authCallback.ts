@@ -21,6 +21,15 @@ import { supabase } from './supabase';
 export type AuthCallbackResult =
   | { status: 'signed-in' }
   | { status: 'ignored' }
+  /**
+   * The link was accepted but produced no session, and GoTrue explained why in
+   * plain text. The email-change flow does this when "Secure email change" is
+   * on: confirming one address returns "Please proceed to confirm link sent to
+   * the other email" and holds `email_change_confirm_status` at 1 until the
+   * second link is opened. Treating that as `ignored` is what made the flow
+   * look like it silently did nothing.
+   */
+  | { status: 'notice'; message: string }
   | { status: 'error'; message: string };
 
 /** Collects params from both `?query` and `#fragment` into one map. */
@@ -82,6 +91,11 @@ export async function completeAuthFromUrl(url: string): Promise<AuthCallbackResu
     const { error: e } = await supabase.auth.setSession({ access_token, refresh_token });
     return e ? { status: 'error', message: e.message } : { status: 'signed-in' };
   }
+
+  // 4. No session to establish, but GoTrue said something worth showing. Checked
+  //    last so a link carrying both a credential and a message still redeems.
+  const notice = params.get('message');
+  if (notice) return { status: 'notice', message: notice.replace(/\+/g, ' ') };
 
   // Not an auth link — e.g. the app was opened by some other deep link.
   return { status: 'ignored' };

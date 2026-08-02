@@ -44,7 +44,8 @@
     "backToSignIn": "العودة لتسجيل الدخول",
     "verifying": "جارٍ تأكيد بريدك…",
     "verified": "تم كل شيء",
-    "verifyFailed": "لم يعمل هذا الرابط"
+    "verifyFailed": "لم يعمل هذا الرابط",
+    "oneMoreStep": "خطوة أخيرة"
   },
   "dashboard": {
     "greeting": "مرحبًا {{name}}",
