@@ -1,8 +1,5 @@
 import type { ExpoConfig } from 'expo/config';
 
-const admobAndroidAppId = process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID;
-const admobIosAppId = process.env.EXPO_PUBLIC_ADMOB_IOS_APP_ID;
-
 /**
  * Vaultly — smart digital vault for receipts, warranties and subscriptions.
  * All secrets come from the environment (see .env.example); nothing is committed.
@@ -45,10 +42,6 @@ const config: ExpoConfig = {
   bundleIdentifier: 'com.adialfaifi.vaultly',
   supportsTablet: true,
 
-  config: {
-    googleMobileAdsAppId: process.env.EXPO_PUBLIC_ADMOB_IOS_APP_ID,
-  },
-
   infoPlist: {
     NSCameraUsageDescription: 'Vaultly uses the camera to scan your receipts.',
     NSPhotoLibraryUsageDescription: 'Vaultly needs access to attach receipt photos.',
@@ -58,10 +51,6 @@ const config: ExpoConfig = {
   android: {
   package: 'com.adialfaifi.vaultly',
   permissions: ['CAMERA', 'POST_NOTIFICATIONS'],
-
-  config: {
-    googleMobileAdsAppId: process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID,
-  },
 },
   locales: {
     en: './src/i18n/native/en.json',
@@ -80,22 +69,13 @@ const config: ExpoConfig = {
       'expo-notifications',
       { icon: './assets/notification-icon.png', color: '#1B2A4A' },
     ],
-    // AdMob refuses to prebuild with blank app IDs, so it only joins the build
-    // once both are configured. Until then the rewarded-ad path degrades on its
-    // own (see services/ads.ts).
-    ...(admobAndroidAppId && admobIosAppId
-      ? ([
-          [
-            'react-native-google-mobile-ads',
-            {
-              androidAppId: admobAndroidAppId,
-              iosAppId: admobIosAppId,
-              userTrackingUsageDescription:
-                'This identifier will be used to deliver personalised ads to you.',
-            },
-          ],
-        ] as NonNullable<ExpoConfig['plugins']>)
-      : []),
+    // No AdMob plugin, and no `react-native-google-mobile-ads` dependency: with
+    // no app IDs configured the native SDK was autolinked with a blank
+    // APPLICATION_ID and crashed the app during Application.onCreate(), before
+    // React Native started. See HANDOVER.md §14. To restore rewarded ads,
+    // reinstall the package, set EXPO_PUBLIC_ADMOB_{IOS,ANDROID}_APP_ID, and add
+    // the plugin back here together with `config.googleMobileAdsAppId` on both
+    // platforms. `services/ads.ts` needs no change — it degrades on its own.
     [
       'expo-build-properties',
       { android: { extraMavenRepos: [] } },

@@ -8,12 +8,62 @@
  * scope: importing it up top crashes the bundle before the first screen
  * renders. When it is missing, mock mode simulates the reward so the
  * rewarded-slot flow stays testable; otherwise ads report unavailable.
+ *
+ * The package is currently **not installed** — with no AdMob app ID configured
+ * it autolinked the native SDK with a blank APPLICATION_ID, which threw during
+ * Application.onCreate() and killed the dev build before any JS ran
+ * (HANDOVER.md §14). Everything below is therefore dormant, not dead: the lazy
+ * require() picks the module up again the moment it is reinstalled. Because
+ * `typeof import(...)` cannot resolve an uninstalled package, the surface this
+ * file actually uses is described structurally instead. Swap `AdsModule` back
+ * to `typeof import('react-native-google-mobile-ads')` when it returns.
  */
 import { Platform } from 'react-native';
 
 import { env, USE_MOCK_DATA } from '@/constants/config';
 
-type AdsModule = typeof import('react-native-google-mobile-ads');
+/**
+ * An event name that carries its listener's payload type. The real library's
+ * values are opaque strings; branding them here is what lets one
+ * `addAdEventListener` signature type each listener correctly.
+ */
+type AdEvent<TPayload> = string & { readonly __payload?: TPayload };
+
+type RewardedAdInstance = {
+  addAdEventListener<TPayload>(
+    event: AdEvent<TPayload>,
+    listener: (payload: TPayload) => void,
+  ): () => void;
+  load(): void;
+  show(): void;
+};
+
+type AdsModule = {
+  default: () => {
+    setRequestConfiguration(config: {
+      maxAdContentRating: string;
+      tagForChildDirectedTreatment: boolean;
+      tagForUnderAgeOfConsent: boolean;
+    }): Promise<void>;
+    initialize(): Promise<unknown>;
+  };
+  MaxAdContentRating: { PG: string };
+  TestIds: { REWARDED: string };
+  AdEventType: {
+    CLOSED: AdEvent<void>;
+    ERROR: AdEvent<{ message: string }>;
+  };
+  RewardedAdEventType: {
+    LOADED: AdEvent<void>;
+    EARNED_REWARD: AdEvent<{ amount: number; type: string }>;
+  };
+  RewardedAd: {
+    createForAdRequest(
+      unitId: string,
+      request: { requestNonPersonalizedAdsOnly: boolean },
+    ): RewardedAdInstance;
+  };
+};
 
 let cached: AdsModule | null | undefined;
 
@@ -23,7 +73,7 @@ function adsModule(): AdsModule | null {
   try {
     cached = require('react-native-google-mobile-ads') as AdsModule;
   } catch {
-    if (__DEV__) console.log('[vaultly] AdMob unavailable (Expo Go) — rewarded ads simulated.');
+    if (__DEV__) console.log('[vaultly] AdMob not installed — rewarded ads simulated.');
     cached = null;
   }
   return cached;
