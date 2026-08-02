@@ -225,8 +225,8 @@ Current `.env` state:
 | `EXPO_PUBLIC_AI_PROVIDER` | empty | blank ⇒ `edge` (Edge Function) |
 | `EXPO_PUBLIC_GEMINI_API_KEY` | empty | legacy client-side path, unused |
 | `EXPO_PUBLIC_GEMINI_MODEL` | set | `gemini-2.0-flash` (inert) |
-| `EXPO_PUBLIC_REVENUECAT_IOS_KEY` | empty | Premium inactive |
-| `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` | empty | Premium inactive |
+| `EXPO_PUBLIC_REVENUECAT_IOS_KEY` | empty | **intentional** — no iOS app exists yet |
+| `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` | **set** (`goog_…`) | SDK configures on Android; also set as an EAS env var in all 3 environments |
 | `EXPO_PUBLIC_ADMOB_*` (4) | empty | ads inactive; plugin omitted from build |
 | `EAS_PROJECT_ID` | empty | needed for push tokens + EAS builds |
 | `EXPO_PUBLIC_SUPPORT_EMAIL` | not present | defaults to `support@vaultly.app` |
@@ -468,18 +468,44 @@ monetization decision reads.
   stops at 5. `CANCELLATION` and `EXPIRATION` returned the row to exactly its
   original state.
 
-**Still required (all external, none of it code):**
-1. Create the SAR 10/month product in App Store Connect and Play Console.
-2. Create a RevenueCat project; entitlement id must be **`premium_access`**,
-   offering id **`default`**; add the webhook URL + the secret above.
-3. Put the SDK keys in `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `_ANDROID_KEY`
-   (and in EAS env vars — `.env` is local-only). **This is a pure drop-in: the
-   path `.env` → `app.config.ts extra` → `config.ts` → `purchases.ts` is already
-   complete and needs no code change.** Until a key is present,
-   `configurePurchases()` returns early, `configured` stays false, and every
-   call degrades: `getMonthlyPackage()` → nulls, `restorePurchases()` → null
-   (surfacing as `unavailable`).
-4. Test on a dev client — impossible in Expo Go.
+**Android SDK: CONFIGURED and verified on device 2026-08-03.**
+
+`EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` is set in `.env` **and** as an EAS env var
+in all three environments (development / preview / production), so cloud builds
+carry it. No code changed — the key was a pure drop-in, as designed.
+
+Verified from the running app's own SDK logs:
+
+```
+[RevenueCat] SDK Version - 8.24.0
+[RevenueCat] Package name - com.adialfaifi.vaultly
+[RevenueCat] 👤 Initial App User ID - 3b9a5850-…   ← the Supabase uid
+[RevenueCat] Starting connection for BillingClientImpl
+[RevenueCat] 😻 CustomerInfo updated from network.
+```
+
+The App User ID **is** the Supabase uid, which is what makes the webhook's
+`.eq('id', event.app_user_id)` mapping work.
+
+**Restore Purchases verified end to end** by driving the real button on device:
+the SDK logged `restorePurchases has been called` → `No purchases found to
+restore`, and the app showed `paywall.restoreNone` ("no previous purchases").
+Before the key it could only ever report `unavailable`; it now correctly
+distinguishes *nothing to restore* from *store unavailable*.
+
+**iOS deliberately deferred** — no iOS app exists yet. `configurePurchases()`
+uses `Platform.select`, so the empty iOS key affects nothing on Android. Add
+`EXPO_PUBLIC_REVENUECAT_IOS_KEY` when the iOS app is created; no code change.
+
+**Still required (external, none of it code):**
+1. Create the SAR 10/month subscription in Play Console, and map it to offering
+   **`default`** with entitlement **`premium_access`** in RevenueCat.
+   RevenueCat currently reports, in its own words:
+   *"There are no products registered in the RevenueCat dashboard for your
+   offerings"* — which is the single remaining blocker.
+2. Add the webhook URL + `REVENUECAT_WEBHOOK_SECRET` in the RevenueCat dashboard
+   (the endpoint is deployed and verified — see above).
+3. A real purchase on a dev client — impossible in Expo Go.
 
 The Supabase user id is passed as the RevenueCat App User ID so entitlements
 follow the account across devices and the webhook can map back to a profile row.
@@ -1021,7 +1047,9 @@ Note the entry path — this is an expo-router project, so `/index.bundle` 404s.
 | Notifications (local) | ⚠️ Implemented | Not observed firing |
 | Notifications (push) | ❌ Blocked | Needs EAS_PROJECT_ID + dev build |
 | RevenueCat — code + webhook | ✅ Done & verified | — |
-| RevenueCat — store side | ❌ Not started | Store products, RevenueCat project, SDK keys |
+| RevenueCat — Android SDK | ✅ Configured & verified | — |
+| RevenueCat — iOS SDK | ⏸ Deferred | No iOS app yet; key only |
+| RevenueCat — store products | ❌ Not started | Play Console subscription + offering mapping |
 | Free storage model (§8a) | ✅ Live & verified | Ad itself blocked on AdMob |
 | AdMob | ❌ Package removed | Re-add pkg + real app IDs; server side is done |
 | Legal content | ⚠️ Drafted | Placeholder + needs review |
