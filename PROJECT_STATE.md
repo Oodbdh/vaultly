@@ -5,8 +5,12 @@
 > `HANDOVER.md` was verified 2026-08-02 and is newer than this file. Where the
 > two disagree, **HANDOVER.md is correct**. Known drift in this document:
 >
-> - §5 lists `react-native-google-mobile-ads@^14.2.5` — it is **^15.8.3**, and
->   it is the cause of the current Android launch crash and EAS build failure.
+> - §5 and §14 describe `react-native-google-mobile-ads` as an installed
+>   dependency. **It has been removed** — with no app IDs configured it
+>   autolinked a native SDK with a blank `APPLICATION_ID`, the diagnosed cause of
+>   the Android launch crash and the EAS build failure. See HANDOVER.md §11/§14.
+> - §1 and §20 say the project is not a git repository and needs `git init`.
+>   **It is a repo**, and all work is committed.
 > - §3 says `USE_MOCK_DATA` is read in exactly four places — it is now read in
 >   eight.
 > - §5 predates `expo-sharing` and `expo-dev-client` being added.

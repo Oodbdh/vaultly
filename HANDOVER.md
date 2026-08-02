@@ -1,8 +1,18 @@
 # Vaultly — Handover
 
-**Written:** 2026-08-02. Every claim was verified against the live project and
-working tree on that date. Where something could not be verified, it says so
-explicitly rather than guessing.
+**Written:** 2026-08-02, updated later the same day. Every claim was verified
+against the live project and working tree on that date. Where something could
+not be verified, it says so explicitly rather than guessing.
+
+> **Update — since this file was first written:**
+>
+> - All 43 files of uncommitted work are now **committed** (`62a0b80`). §15 is
+>   history, not a warning.
+> - `react-native-google-mobile-ads` has been **removed** (`ffb023a`) — the
+>   recommended fix in §14 is now applied. **The crash is not confirmed fixed:**
+>   there is still no `adb` here, so no dev build has been launched since.
+>   Rebuild the dev client and check.
+> - Next action is therefore **§20 step 4**, not step 1.
 
 **Read this first, then `PROJECT_STATE.md`.** This file is newer and supersedes
 it wherever the two disagree (`PROJECT_STATE.md` was last verified 2026-07-29
@@ -14,20 +24,23 @@ and has drifted — see §16).
 
 Vaultly is an Expo SDK 54 / React Native 0.81 mobile app for tracking receipts,
 warranties and subscriptions. It is **feature-complete against the design** and
-type-clean with 76 passing tests. The immediate blocker is that **the Android
-development build crashes on launch before any JavaScript runs** (§14). Behind
-that sit two auth flows that cannot complete in Expo Go by design (§8, §9), and
-a large body of **uncommitted work** (§15) that has never been committed to git.
+type-clean with 76 passing tests. All work is now committed. The immediate
+blocker was that **the Android development build crashed on launch before any
+JavaScript ran** (§14); the diagnosed cause — an autolinked Google Mobile Ads
+SDK with a blank `APPLICATION_ID` — has been removed, but **no dev build has
+been launched since, so the fix is unproven**. Behind that sit two auth flows
+that cannot complete in Expo Go by design (§8, §9).
 
-**Verification gates, run 2026-08-02:**
+**Verification gates, run 2026-08-02 after the AdMob removal:**
 
 | Gate | Command | Result |
 |---|---|---|
 | Types | `npx tsc --noEmit` | **clean** |
 | Unit tests | `npm test` | **76 pass / 0 fail, 14 suites** |
-| Android bundle | Metro, cold | HTTP 200, 10.02 MB |
-| iOS bundle | Metro, cold | HTTP 200, 10.03 MB |
-| Android dev build | launch on device | **CRASHES IMMEDIATELY** |
+| Android bundle | Metro, cold | HTTP 200, 9.64 MB (was 10.02) |
+| iOS bundle | Metro, cold | HTTP 200, 9.65 MB (was 10.03) |
+| Android prebuild | `expo prebuild --clean -p android` | clean; **no ads refs, no ads meta-data** |
+| Android dev build | launch on device | **not retested — no adb here** |
 
 ---
 
@@ -125,14 +138,14 @@ src/mocks       in-memory backend, swapped in by one flag
 | expo-sharing | ~14.0.8 |
 | expo-web-browser | ~15.0.11 |
 | expo-file-system | ~19.0.23 |
-| **react-native-google-mobile-ads** | **^15.8.3** |
+| ~~react-native-google-mobile-ads~~ | **removed** (`ffb023a`, was ^15.8.3) — §11 |
 | react-native-purchases | ^8.2.2 |
 
 Added during this work: **`expo-sharing`** (RN core cannot share files on
 Android) and **`expo-dev-client`**.
 
-⚠️ `PROJECT_STATE.md` lists `react-native-google-mobile-ads@^14.2.5`. **Wrong** —
-it is 15.8.3, locked at 15.8.3.
+⚠️ `PROJECT_STATE.md` lists `react-native-google-mobile-ads@^14.2.5`. Wrong on
+both counts — it was 15.8.3, and it is now gone entirely.
 
 **TypeScript must stay ≥5.4.** react-query 5.6+ needs `NoInfer<T>`; on 5.3 every
 `useQuery` result silently becomes `any`. Expo warns it wants ~5.3.3. **Ignore.**
@@ -154,7 +167,7 @@ it is 15.8.3, locked at 15.8.3.
 | `EXPO_PUBLIC_AI_PROVIDER` | empty ⇒ `edge` |
 | `EXPO_PUBLIC_GEMINI_API_KEY` | empty |
 | `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `_ANDROID_KEY` | **empty** |
-| `EXPO_PUBLIC_ADMOB_IOS_APP_ID` / `_ANDROID_APP_ID` | **empty** ← causes §14 |
+| `EXPO_PUBLIC_ADMOB_IOS_APP_ID` / `_ANDROID_APP_ID` | empty (no longer read — §11) |
 | `EXPO_PUBLIC_ADMOB_REWARDED_IOS` / `_ANDROID` | empty |
 | `EAS_PROJECT_ID` | empty (hardcoded fallback in `app.config.ts`) |
 | `EXPO_PUBLIC_SUPPORT_EMAIL` | not present → code default |
@@ -309,18 +322,28 @@ To activate: store products, RevenueCat project, keys in `.env`, deploy
 
 ---
 
-## 11. AdMob — status: code complete, **not configured, and currently fatal**
+## 11. AdMob — status: **package removed**, code kept dormant
 
-`src/services/ads.ts` lazily requires the module and degrades. `usePremium().showAds`
-is the single ad gate.
+`react-native-google-mobile-ads` is **no longer a dependency** (`ffb023a`). It
+was the diagnosed cause of the launch crash: the config plugin was conditionally
+omitted when the app IDs are blank (they are), but the npm package stayed in
+`dependencies`, so autolinking compiled the native SDK anyway — see §14.
 
-**This is the cause of the launch crash — see §14.** The config plugin is
-conditionally omitted from `app.config.ts:86-98` when the app IDs are blank
-(they are), but the npm package stays in `dependencies`, so autolinking compiles
-the native SDK anyway.
+`src/services/ads.ts` is **unchanged at runtime**. The lazy `require()` already
+degrades to `unavailable`, so the rewarded-slot path fails safe with the package
+absent. Only its *type* changed: `typeof import('react-native-google-mobile-ads')`
+cannot resolve an uninstalled package, so the surface the file uses is now
+described structurally. **Swap that back** when the package returns.
+`usePremium().showAds` is still the single ad gate.
+
+**To re-enable:** `npx expo install react-native-google-mobile-ads`, set
+`EXPO_PUBLIC_ADMOB_IOS_APP_ID` / `_ANDROID_APP_ID`, restore the plugin block and
+both `config.googleMobileAdsAppId` entries in `app.config.ts` (the removal
+comment there lists them), and revert the `AdsModule` type. Then rebuild.
 
 Rewarded ads mint bonus slots only via `grant-bonus-slot` (service role) — **not
-deployed**, so the grant would fail even with AdMob configured.
+deployed**, so the grant would have failed even with AdMob configured. Nothing
+reachable was lost by removing this.
 
 ---
 
@@ -384,7 +407,11 @@ warranties. It is now kind-aware. **No schema change was made.**
 
 ---
 
-## 14. 🔴 Android development build crash — PRIMARY BLOCKER
+## 14. 🟠 Android development build crash — fix applied, **unverified**
+
+**Status:** the diagnosed cause was removed in `ffb023a`. **Nobody has launched a
+dev build since**, so this is not yet closed. Rebuild the dev client; if it still
+crashes, the diagnosis below was wrong and you need the logcat trace.
 
 **Symptom:** the dev build exits immediately on launch. No red box, no JS error.
 
@@ -426,13 +453,23 @@ exactly, and explains why Expo Go never showed it (no native modules there).
 **Ruled out** (none of these has run at crash time): RevenueCat (lazy JS require),
 Supabase (pure JS), Expo Router, `expo-dev-client`.
 
-**Confidence: high, not proven.** Confirm against logcat before acting.
+**Confidence: high, not proven.** The evidence above is all circumstantial —
+config, manifests and the module's own build-time warning. No stack trace was
+ever seen.
 
-**Recommended fix (not applied):** remove `react-native-google-mobile-ads` from
-`dependencies`, delete the conditional plugin block (`app.config.ts:86-98`) and
-the two `config.googleMobileAdsAppId` entries, then rebuild. `services/ads.ts`
-already fails safe. This also resolves the EAS Kotlin build failure below.
-Re-add when AdMob is actually configured.
+**Fix, APPLIED in `ffb023a`:** `react-native-google-mobile-ads` removed from
+`dependencies`; the conditional plugin block and both
+`config.googleMobileAdsAppId` entries deleted from `app.config.ts`;
+`services/ads.ts` left working (§11). Verified afterwards: `tsc` clean, 76 tests
+pass, both bundles HTTP 200 and 0.4 MB smaller, and a `--clean` Android prebuild
+produces a project with **zero** `google-mobile-ads` references and **no** ads
+`meta-data` in `AndroidManifest.xml`.
+
+**What that does and does not prove.** It proves the empty `APPLICATION_ID` can
+no longer be present, because the SDK is no longer in the build at all. It does
+**not** prove that was the crash. Confirm by launching a rebuilt dev client. If
+it still crashes, get the trace — everything above becomes wrong and the search
+restarts.
 
 **Related, same package:** an earlier EAS Android build failed with Kotlin
 `Unresolved reference: currentActivity` / `runOnUiThread` in this module. The API
@@ -445,9 +482,11 @@ is built with **Kotlin 2.1.20**. `expo-build-properties` is present but sets onl
 
 ---
 
-## 15. Files modified recently — **all uncommitted**
+## 15. Files modified recently — **now committed**
 
-Last commit: `a5fa077`. **Everything below is uncommitted and unbacked-up.**
+All of the below went in as `62a0b80`, on `main`, gates green at commit time.
+`ffb023a` followed with the AdMob removal. The working tree is clean; there is
+still **no git remote**, so the only copy is this machine plus OneDrive.
 
 **Modified (33):**
 ```
@@ -518,8 +557,8 @@ since the env vars are empty).
 
 | Issue | Severity | Notes |
 |---|---|---|
-| **Android dev build crashes on launch** | 🔴 Blocker | §14 |
-| **EAS Android build fails** (Kotlin, AdMob module) | 🔴 Blocker | §14, same package |
+| **Android dev build crashes on launch** | 🟠 Fix applied, unverified | §14 — cause removed in `ffb023a`, never retested |
+| **EAS Android build fails** (Kotlin, AdMob module) | 🟠 Fix applied, unverified | §14 — the failing module is gone; the build has not been re-run |
 | Google OAuth cannot complete in Expo Go | 🟠 High | §8 — needs a dev build |
 | Email verification cannot complete in Expo Go | 🟠 High | Same root cause as §8 |
 | `profiles.locale` CHECK allows only `('en','ar')` | 🟠 High | App ships 5 locales. Switching to es/fr/de raises 23514 and **fails silently** (`void`-ed update). Fix written in `migrations/0004_profile_prefs.sql` — **not applied** |
@@ -580,31 +619,39 @@ Long-form prose lives in `src/content/support.ts`, **en + ar only**.
 
 ## 20. Next steps, in order
 
-1. **Capture the logcat trace** (`adb logcat *:E AndroidRuntime:E`) and confirm
-   or correct §14. Everything else is downstream.
-2. **Remove `react-native-google-mobile-ads`** (or supply real app IDs). Expected
-   to fix both the launch crash and the EAS build failure.
-3. **`git add -A && git commit`** — 41 files of work sit uncommitted with no
-   backup. Arguably do this *first*; it is listed second only because the crash
-   is blocking testing.
-4. **Rebuild the dev client** and verify the app launches.
-5. **Verify Google OAuth in the dev build** — §8 predicts it works there, since
+~~1. Capture the logcat trace.~~ Not possible here — no Android SDK, no `adb`.
+   Still the fallback if step 1 below fails.
+~~2. Remove `react-native-google-mobile-ads`.~~ **Done** — `ffb023a`.
+~~3. `git add -A && git commit`.~~ **Done** — `62a0b80`.
+
+1. **Rebuild the dev client and verify the app launches.** This is the whole
+   ballgame — §14's fix is applied but unproven, and everything below is blocked
+   behind a launchable build.
+   ```
+   eas build --profile development --platform android
+   ```
+   If it still crashes, install the Android platform-tools and get the trace:
+   `adb logcat -c && adb logcat *:E AndroidRuntime:E`.
+2. **Verify Google OAuth in the dev build** — §8 predicts it works there, since
    `vaultly://auth-callback` is honoured. Confirm in Supabase → URL Configuration
    that Site URL and Redirect URLs are as expected.
-6. **Apply `migrations/0004_profile_prefs.sql`** in the SQL Editor — fixes the
+3. **Apply `migrations/0004_profile_prefs.sql`** in the SQL Editor — fixes the
    locale CHECK and adds the notification-preference columns. Then
    `npm run db:types` and delete `PendingProfileColumns` from
    `src/lib/database.types.ts` plus the `as never` cast in `services/profile.ts`.
-7. **Deploy the Edge Functions:** `analyze-receipt` (new OCR prompt) and
-   `delete-account`.
-8. **Wire the Settings notification toggles** to the new columns.
-9. **Fix the nested components in `profile.tsx`** before anyone adds an input there.
-10. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
-    Still the only way to exercise authenticated paths.
-11. Replace `assets/notification-icon.png`; fill `LEGAL_ENTITY` in
-    `src/content/support.ts`; legal review of Privacy + Terms.
-12. Monetization: RevenueCat products/keys/webhook, AdMob IDs, deploy
-    `grant-bonus-slot`.
+   *Independent of the build — can be done right now.*
+4. **Deploy the Edge Functions:** `analyze-receipt` (new OCR prompt) and
+   `delete-account`. *Also independent of the build.*
+5. **Wire the Settings notification toggles** to the new columns.
+6. **Fix the nested components in `profile.tsx`** before anyone adds an input there.
+7. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
+   Still the only way to exercise authenticated paths.
+8. Replace `assets/notification-icon.png`; fill `LEGAL_ENTITY` in
+   `src/content/support.ts`; legal review of Privacy + Terms.
+9. **Add a git remote.** The repo has no remote, so "committed" still means one
+   machine. This is the only backup gap left.
+10. Monetization: RevenueCat products/keys/webhook, AdMob IDs (which means
+    re-adding the package — §11), deploy `grant-bonus-slot`.
 
 ---
 
