@@ -35,21 +35,34 @@ const config: ExpoConfig = {
     admobRewardedAndroid: process.env.EXPO_PUBLIC_ADMOB_REWARDED_ANDROID,
     // Forces the in-memory backend even when Supabase keys are present.
     useMockData: process.env.EXPO_PUBLIC_USE_MOCK_DATA === 'true',
-    eas: { projectId: process.env.EAS_PROJECT_ID },
+    eas: {
+  projectId:
+    process.env.EAS_PROJECT_ID ??
+    'c8899277-7bd4-469f-84c8-9b5e43a01208',
+},
   },
   ios: {
-    bundleIdentifier: 'com.vaultly.app',
-    supportsTablet: true,
-    infoPlist: {
-      NSCameraUsageDescription: 'Vaultly uses the camera to scan your receipts.',
-      NSPhotoLibraryUsageDescription: 'Vaultly needs access to attach receipt photos.',
-      CFBundleAllowMixedLocalizations: true,
-    },
+  bundleIdentifier: 'com.adialfaifi.vaultly',
+  supportsTablet: true,
+
+  config: {
+    googleMobileAdsAppId: process.env.EXPO_PUBLIC_ADMOB_IOS_APP_ID,
   },
+
+  infoPlist: {
+    NSCameraUsageDescription: 'Vaultly uses the camera to scan your receipts.',
+    NSPhotoLibraryUsageDescription: 'Vaultly needs access to attach receipt photos.',
+    CFBundleAllowMixedLocalizations: true,
+  },
+},
   android: {
-    package: 'com.vaultly.app',
-    permissions: ['CAMERA', 'POST_NOTIFICATIONS'],
+  package: 'com.adialfaifi.vaultly',
+  permissions: ['CAMERA', 'POST_NOTIFICATIONS'],
+
+  config: {
+    googleMobileAdsAppId: process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID,
   },
+},
   locales: {
     en: './src/i18n/native/en.json',
     ar: './src/i18n/native/ar.json',

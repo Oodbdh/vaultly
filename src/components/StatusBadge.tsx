@@ -24,7 +24,13 @@ export function resolveStatus(input: {
   ocrConfidence?: number | null;
 }): { status: ItemStatus; days: number | null } {
   if (input.kind === 'subscription' && input.nextRenewal) {
-    return { status: 'subscription', days: calendarDaysUntil(input.nextRenewal) };
+    const days = calendarDaysUntil(input.nextRenewal);
+    // Past its renewal date a subscription reads as Expired. `days: null` makes
+    // the badge show the state name rather than a countdown, so no subscription
+    // copy is reinterpreted through warranty wording.
+    // Subscriptions only — the warranty branch below is untouched.
+    if (days < 0) return { status: 'expired', days: null };
+    return { status: 'subscription', days };
   }
   if (input.warrantyExpiresOn) {
     const days = calendarDaysUntil(input.warrantyExpiresOn);

@@ -2,8 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import i18n from '@/i18n';
-import { USE_MOCK_DATA } from '@/constants/config';
-import { supabase } from '@/lib/supabase';
+import { updateProfile } from './profile';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -40,9 +39,7 @@ export async function registerForPush(userId: string): Promise<string | null> {
 
   try {
     const token = (await Notifications.getExpoPushTokenAsync()).data;
-    if (!USE_MOCK_DATA) {
-      await supabase.from('profiles').update({ push_token: token }).eq('id', userId);
-    }
+    await updateProfile(userId, { push_token: token });
     return token;
   } catch {
     // No EAS project id / Expo Go — local reminders still schedule fine.

@@ -10,6 +10,7 @@ import type {
 } from '@/lib/database.types';
 import { QuotaExceededError } from '@/lib/errors';
 import type { ListItem } from '@/lib/types';
+import { addBillingCycle, todayISO } from '@/lib/dateMath';
 import {
   mockCreateItem,
   mockCreateSubscription,
@@ -17,6 +18,7 @@ import {
   mockFetchQuota,
   mockGetItem,
   mockListItems,
+  mockRenewSubscription,
   mockUpdateItem,
 } from '@/mocks/backend';
 import { uploadReceiptImage } from './storage';
@@ -222,6 +224,63 @@ export async function createSubscription(
   });
 
   return data;
+}
+
+/**
+ * Renew an expired subscription in place, within its 48-hour grace window.
+ *
+ * Everything that identifies the subscription is left alone — name, amount,
+ * currency, period, auto_renews, reminder_days, notes, category, image. Only
+ * the cycle dates move: the item's `purchase_date` becomes the new start and
+ * `next_renewal` one billing cycle after it. "Active" is not a stored column;
+ * it follows from `next_renewal` being in the future again.
+ *
+ * The caller is responsible for checking `renewalWindow(...).renewable` first —
+ * this is deliberately a dumb write so the window rule lives in one tested
+ * place rather than being duplicated here.
+ *
+ * Subscriptions only. Nothing here touches warranties or receipts.
+ */
+export async function renewSubscription(
+  itemId: string,
+): Promise<{ startDate: string; nextRenewal: string }> {
+  if (USE_MOCK_DATA) return mockRenewSubscription(itemId);
+
+  const { data: sub, error: readError } = await supabase
+    .from('subscriptions')
+    .select('*')
+    .eq('item_id', itemId)
+    .single();
+  if (readError) throw readError;
+
+  const startDate = todayISO();
+  const nextRenewal = addBillingCycle(startDate, sub.period);
+
+  const { error: subError } = await supabase
+    .from('subscriptions')
+    .update({ next_renewal: nextRenewal })
+    .eq('item_id', itemId);
+  if (subError) throw subError;
+
+  // The item's purchase date doubles as the subscription's start date.
+  const { error: itemError } = await supabase
+    .from('vault_items')
+    .update({ purchase_date: startDate })
+    .eq('id', itemId);
+  if (itemError) throw itemError;
+
+  // Reminder *settings* are unchanged; the reminders themselves are re-pointed
+  // at the new date. Identifiers are derived, so this replaces rather than
+  // duplicates the old ones.
+  await scheduleRenewalReminders({
+    subscriptionId: itemId,
+    name: sub.name,
+    nextRenewal,
+    amountLabel: `${sub.amount} ${sub.currency}`,
+    reminderDays: sub.reminder_days,
+  });
+
+  return { startDate, nextRenewal };
 }
 
 export async function updateItem(id: string, patch: Partial<VaultItem>): Promise<VaultItem> {

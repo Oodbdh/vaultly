@@ -16,6 +16,24 @@ export type AttentionEntry = {
 };
 
 /**
+ * How far ahead each kind starts asking for attention, in calendar days.
+ *
+ * They differ on purpose. A warranty lapsing is irreversible and often needs
+ * lead time to act on, so 30 days is useful warning. A renewal is a recurring
+ * charge you may want to cancel — flagging it a month out just parks it on the
+ * card for weeks and trains the user to ignore the whole section. A week is
+ * enough notice to cancel and short enough to still read as urgent.
+ *
+ * This governs the card only. Reminder scheduling is separate and unchanged:
+ * warranties still notify at 30/7/1 days and subscriptions at 3/1
+ * (`services/notifications.ts`).
+ */
+const ATTENTION_WINDOW_DAYS: Record<AttentionEntry['kind'], number> = {
+  warranty: 30,
+  subscription: 7,
+};
+
+/**
  * The command-centre card. Warranties and subscriptions merged into one
  * urgency-ranked list — the user cares about "what's about to happen", not
  * which table it came from. When nothing is urgent it says so rather than
@@ -34,9 +52,9 @@ export function NeedsAttention({
   const { locale, textAlign, flipIcon } = useDirection();
   const type = typeScale(locale);
 
-  // Only genuinely time-sensitive items earn a place here (≤30 days, or overdue).
+  // Only genuinely time-sensitive items earn a place here, or overdue ones.
   const urgent = entries
-    .filter((e) => calendarDaysUntil(e.date) <= 30)
+    .filter((e) => calendarDaysUntil(e.date) <= ATTENTION_WINDOW_DAYS[e.kind])
     .sort((a, b) => calendarDaysUntil(a.date) - calendarDaysUntil(b.date));
   const shown = urgent.slice(0, max);
   const overflow = urgent.length - shown.length;

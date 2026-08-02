@@ -1,4 +1,4 @@
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 
 import { STORAGE_BUCKET, USE_MOCK_DATA } from '@/constants/config';
 import { supabase } from '@/lib/supabase';
@@ -42,6 +42,32 @@ export async function signedReceiptUrl(path: string, expiresInSeconds = 3600): P
     .createSignedUrl(path, expiresInSeconds);
   if (error) throw error;
   return data.signedUrl;
+}
+
+/**
+ * A local file for the system share sheet.
+ *
+ * Sharing needs a real file on disk: a signed https URL would be shared as a
+ * link that expires in an hour and that the recipient cannot open at all (the
+ * bucket is private). So the image is copied into the cache directory first.
+ *
+ * Nothing is uploaded — this only ever reads. The cache directory is the right
+ * home because the OS may reclaim it, and a re-share simply downloads again.
+ * A file already fetched is reused rather than downloaded twice.
+ */
+export async function localCopyForSharing(path: string): Promise<string> {
+  const url = await signedReceiptUrl(path);
+
+  // Mock mode hands the local uri straight back, and a freshly captured photo
+  // is already on disk — either way there is nothing to fetch.
+  if (url.startsWith('file://')) return url;
+
+  const name = path.split('/').pop() || `receipt-${Date.now()}.jpg`;
+  const cached = new File(Paths.cache, name);
+  if (cached.exists) return cached.uri;
+
+  const downloaded = await File.downloadFileAsync(url, cached);
+  return downloaded.uri;
 }
 
 export async function deleteReceiptImage(path: string): Promise<void> {

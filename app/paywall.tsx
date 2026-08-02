@@ -1,4 +1,4 @@
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
 import { colors, radius, spacing, typeScale } from '@/theme';
 import { useDirection } from '@/i18n/rtl';
-import { usePaywall } from '@/hooks/usePaywall';
+import { restoreAlert, usePaywall } from '@/hooks/usePaywall';
 import { usePremium } from '@/hooks/usePremium';
 
 const BENEFITS = [
@@ -76,7 +76,14 @@ export default function Paywall() {
                 if (outcome === 'purchased') router.back();
               }}
             />
-            <Button variant="ghost" label={t('paywall.restore')} onPress={() => void restore()} />
+            <Button
+              variant="ghost"
+              label={t('paywall.restore')}
+              onPress={async () => {
+                const { title, message } = restoreAlert(await restore(), t);
+                Alert.alert(title, message);
+              }}
+            />
             <Text style={[type.caption, { color: colors.textMuted, textAlign: 'center' }]}>
               {t('paywall.terms')}
             </Text>

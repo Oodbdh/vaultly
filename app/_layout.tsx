@@ -82,6 +82,7 @@ function AuthGate() {
       <Stack.Screen name="invoices" options={{ headerShown: true }} />
       <Stack.Screen name="warranties" options={{ headerShown: true }} />
       <Stack.Screen name="search" options={{ headerShown: true }} />
+      <Stack.Screen name="account" options={{ headerShown: true }} />
       <Stack.Screen name="support/faq" options={{ headerShown: true }} />
       <Stack.Screen name="support/legal" options={{ headerShown: true }} />
       <Stack.Screen name="subscriptions" options={{ headerShown: true }} />

@@ -6,6 +6,7 @@ import { authRedirectTo } from '@/lib/authRedirect';
 import { supabase } from '@/lib/supabase';
 import type { Profile } from '@/lib/database.types';
 import { mockProfile, mockSession } from '@/mocks/auth';
+import { fetchProfile } from '@/services/profile';
 import { configurePurchases, logOutPurchases } from '@/services/purchases';
 
 type AuthState = {
@@ -14,6 +15,8 @@ type AuthState = {
   profile: Profile | null;
   initialising: boolean;
   setSession: (session: Session | null) => void;
+  /** Cache a row the profile service has already persisted. */
+  setProfile: (profile: Profile) => void;
   loadProfile: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<{ error?: string }>;
   signUpWithEmail: (
@@ -23,6 +26,24 @@ type AuthState = {
   ) => Promise<{ error?: string; needsConfirmation?: boolean }>;
   /** Re-sends the confirmation email, e.g. when the first link expired. */
   resendConfirmation: (email: string) => Promise<{ error?: string }>;
+  /**
+   * Starts Supabase's email-change flow. The address on the account does NOT
+   * move until the link in the email is opened — Supabase holds the new address
+   * as pending and swaps it on verification, so a typo can never lock anyone
+   * out. With "Secure email change" on (the default) it mails both the old and
+   * the new address and requires both to confirm.
+   */
+  updateEmail: (email: string) => Promise<{ error?: string }>;
+  /** Sets a new password for the signed-in user. */
+  updatePassword: (password: string) => Promise<{ error?: string }>;
+  /**
+   * Re-reads the user from Supabase and reissues the access token.
+   *
+   * Needed after an email change is confirmed: the email is a *claim inside the
+   * JWT*, so the token already on the device keeps reporting the old address
+   * until it is reissued, even though the change landed server-side.
+   */
+  refreshUser: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -37,15 +58,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setSession: (session) => set({ session, user: session?.user ?? null, initialising: false }),
 
+  setProfile: (profile) => set({ profile }),
+
   loadProfile: async () => {
-    if (USE_MOCK_DATA) {
-      set({ profile: mockProfile });
-      return;
-    }
     const userId = get().user?.id;
     if (!userId) return;
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) set({ profile: data });
+    const profile = await fetchProfile(userId);
+    if (profile) set({ profile });
   },
 
   signInWithEmail: async (email, password) => {
@@ -89,9 +108,67 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return error ? { error: error.message } : {};
   },
 
+  updateEmail: async (email) => {
+    if (USE_MOCK_DATA) return {};
+    const { error } = await supabase.auth.updateUser(
+      { email },
+      // Same callback the signup link uses; `authCallback.ts` already accepts
+      // the `email_change` OTP type, so verification lands back in the app.
+      { emailRedirectTo: authRedirectTo() },
+    );
+    return error ? { error: error.message } : {};
+  },
+
+  updatePassword: async (password) => {
+    if (USE_MOCK_DATA) return {};
+    const { error } = await supabase.auth.updateUser({ password });
+    return error ? { error: error.message } : {};
+  },
+
+  refreshUser: async () => {
+    if (USE_MOCK_DATA) return;
+
+    // A new token carries the updated claims. This is the step that actually
+    // makes a confirmed email change visible without a restart or re-login.
+    const { data, error } = await supabase.auth.refreshSession();
+    if (!error && data.session) {
+      set({ session: data.session, user: data.session.user });
+      return;
+    }
+
+    // Refresh can legitimately fail (offline, or the refresh token was rotated
+    // by the confirmation itself). Fall back to the server's view of the user,
+    // which is authoritative even when the local token is stale.
+    const { data: fresh } = await supabase.auth.getUser();
+    if (fresh.user) set({ user: fresh.user });
+  },
+
   signOut: async () => {
-    await logOutPurchases();
-    if (!USE_MOCK_DATA) await supabase.auth.signOut();
+    // Every remote call here is best-effort and must not gate the local
+    // teardown. Awaiting them first is what made the button look dead: a
+    // hanging or failing /logout meant `set` never ran, so the user stayed on
+    // Profile with no error and no state change.
+    try {
+      await logOutPurchases();
+    } catch {
+      /* RevenueCat absent or not configured — irrelevant to signing out */
+    }
+
+    if (!USE_MOCK_DATA) {
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // Global sign-out needs the network to revoke other devices' tokens.
+        // When it cannot, still clear this device's stored session, or a
+        // restart would silently restore the one we just "signed out" of.
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+        } catch {
+          /* storage will be overwritten by the next sign-in regardless */
+        }
+      }
+    }
+
     set({ session: null, user: null, profile: null, initialising: false });
   },
 }));

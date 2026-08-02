@@ -91,7 +91,7 @@ export const MONETIZATION = {
  * Where Help & Support sends mail. Overridable per build without touching code;
  * the default keeps every support action working before a real inbox exists.
  */
-export const SUPPORT_EMAIL = extra.supportEmail || 'support@vaultly.app';
+export const SUPPORT_EMAIL = extra.supportEmail || 'appsupport49@gmail.com';
 
 export const STORAGE_BUCKET = 'receipts';
 export const SUPPORTED_LOCALES = ['en', 'ar', 'es', 'fr', 'de'] as const;

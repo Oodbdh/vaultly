@@ -31,15 +31,33 @@ exception when duplicate_object then null; end $$;
 create table if not exists public.profiles (
   id            uuid primary key references auth.users (id) on delete cascade,
   display_name  text,
-  locale        text not null default 'en' check (locale in ('en', 'ar')),
+  -- keep this list in step with SUPPORTED_LOCALES (src/constants/config.ts)
+  locale        text not null default 'en' check (locale in ('en', 'ar', 'es', 'fr', 'de')),
   currency      text not null default 'SAR',
   plan_tier     plan_tier not null default 'free',
   -- mirrored from RevenueCat webhooks; the client never writes this.
   premium_until timestamptz,
   push_token    text,
+  -- local-reminder preferences, surfaced as the Settings toggles
+  warranty_reminders boolean not null default true,
+  renewal_reminders  boolean not null default true,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+
+-- `create table if not exists` is a no-op on a database created before the
+-- columns above existed, so the same changes are re-applied as alters. This is
+-- what keeps setup.sql correct for fresh *and* existing projects. Mirrors
+-- migrations/0004_profile_prefs.sql.
+alter table public.profiles
+  drop constraint if exists profiles_locale_check;
+alter table public.profiles
+  add constraint profiles_locale_check
+  check (locale in ('en', 'ar', 'es', 'fr', 'de'));
+alter table public.profiles
+  add column if not exists warranty_reminders boolean not null default true;
+alter table public.profiles
+  add column if not exists renewal_reminders boolean not null default true;
 
 -- ── vault_items ─────────────────────────────────────────────────────────────
 create table if not exists public.vault_items (

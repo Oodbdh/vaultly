@@ -43,6 +43,8 @@ export const mockProfile: Profile = {
   plan_tier: 'free',
   premium_until: null,
   push_token: null,
+  warranty_reminders: true,
+  renewal_reminders: true,
   created_at: isoStamp(-120),
   updated_at: isoStamp(0),
 };

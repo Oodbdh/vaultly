@@ -160,22 +160,21 @@ export default function Home() {
         <QuotaBanner />
 
         <Section
-          title={t('sections.recentInvoices')}
-          onViewAll={() => router.push('/invoices')}
-          empty={!invoices.length}
+          title={t('sections.subscriptions')}
+          onViewAll={() => router.push('/subscriptions')}
+          empty={!subscriptions.length}
           loading={isLoading}
-          emptyIcon="receipt-outline"
-          emptyKind="invoices"
-          onEmptyCta={() => router.push('/item/new')}
+          emptyIcon="card-outline"
+          emptyKind="subscriptions"
+          onEmptyCta={() => router.push('/item/add-subscription')}
         >
-          {invoices.map((i) => (
-            <InvoiceCard
-              key={i.id}
-              merchant={i.merchant_name}
-              purchaseDate={i.purchase_date}
-              amount={i.total_amount}
-              currency={i.currency}
-              onPress={() => router.push(`/item/${i.id}`)}
+          {subscriptions.map((s) => (
+            <SubscriptionCard
+              key={s.id}
+              name={s.merchant_name}
+              period={s.sub_period ?? 'monthly'}
+              nextRenewal={s.next_renewal!}
+              onPress={() => router.push(`/item/${s.id}`)}
             />
           ))}
         </Section>
@@ -202,21 +201,22 @@ export default function Home() {
         </Section>
 
         <Section
-          title={t('sections.subscriptions')}
-          onViewAll={() => router.push('/subscriptions')}
-          empty={!subscriptions.length}
+          title={t('sections.recentInvoices')}
+          onViewAll={() => router.push('/invoices')}
+          empty={!invoices.length}
           loading={isLoading}
-          emptyIcon="card-outline"
-          emptyKind="subscriptions"
-          onEmptyCta={() => router.push('/item/add-subscription')}
+          emptyIcon="receipt-outline"
+          emptyKind="invoices"
+          onEmptyCta={() => router.push('/item/new')}
         >
-          {subscriptions.map((s) => (
-            <SubscriptionCard
-              key={s.id}
-              name={s.merchant_name}
-              period={s.sub_period ?? 'monthly'}
-              nextRenewal={s.next_renewal!}
-              onPress={() => router.push(`/item/${s.id}`)}
+          {invoices.map((i) => (
+            <InvoiceCard
+              key={i.id}
+              merchant={i.merchant_name}
+              purchaseDate={i.purchase_date}
+              amount={i.total_amount}
+              currency={i.currency}
+              onPress={() => router.push(`/item/${i.id}`)}
             />
           ))}
         </Section>

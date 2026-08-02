@@ -9,6 +9,7 @@ import { Button } from '@/components/Button';
 import { completeAuthFromUrl } from '@/lib/authCallback';
 import { colors, spacing, typeScale } from '@/theme';
 import { useDirection } from '@/i18n/rtl';
+import { useAuthStore } from '@/store/authStore';
 
 /**
  * Landing screen for every auth deep link — email confirmation, password
@@ -39,6 +40,10 @@ export default function AuthCallback() {
     void (async () => {
       const result = await completeAuthFromUrl(url);
       if (result.status === 'signed-in') {
+        // An email-change link arrives here too. The address is a claim inside
+        // the token, so without reissuing it the app keeps showing the old one
+        // even though the change already landed server-side.
+        await useAuthStore.getState().refreshUser();
         setState('done');
         // The auth gate in _layout redirects on session change; this just makes
         // the transition immediate rather than waiting for a re-render.

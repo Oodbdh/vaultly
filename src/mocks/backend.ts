@@ -10,17 +10,20 @@
  * writes would just be a second database to keep in step with the schema.
  */
 import { MONETIZATION } from '@/constants/config';
+import { addBillingCycle } from '@/lib/dateMath';
 import type {
   BillingPeriod,
   ItemKind,
   Json,
+  Profile,
+  ProfileUpdate,
   Subscription,
   VaultItem,
   Warranty,
 } from '@/lib/database.types';
 import { QuotaExceededError } from '@/lib/errors';
 import type { ListItem } from '@/lib/types';
-import { buildSeed, isoDay, MOCK_USER_ID, type MockTables } from './seed';
+import { buildSeed, isoDay, MOCK_USER_ID, mockProfile, type MockTables } from './seed';
 
 let db: MockTables = buildSeed();
 
@@ -53,6 +56,43 @@ function allowance(): number {
 
 function assertQuota(): void {
   if (quotaUsed >= allowance()) throw new QuotaExceededError();
+}
+
+// ── Profile ─────────────────────────────────────────────────────────────────
+
+/**
+ * Held as mutable state rather than returning the frozen seed, so a preference
+ * toggled in Settings survives navigating away and back — the same thing the
+ * real profile row does.
+ */
+let profile: Profile = { ...mockProfile };
+
+export function mockFetchProfile(): Promise<Profile> {
+  return settle(profile);
+}
+
+export function mockUpdateProfile(patch: ProfileUpdate): Profile {
+  profile = { ...profile, ...patch, updated_at: new Date().toISOString() };
+  return profile;
+}
+
+/**
+ * Mock twin of `renewSubscription`: moves only the cycle dates and leaves every
+ * other field on the row exactly as it was.
+ */
+export function mockRenewSubscription(
+  itemId: string,
+): Promise<{ startDate: string; nextRenewal: string }> {
+  const sub = db.subscriptions.find((s) => s.item_id === itemId);
+  const item = db.items.find((i) => i.id === itemId);
+  if (!sub || !item) return Promise.reject(new Error(`Mock subscription not found: ${itemId}`));
+
+  const startDate = isoDay(0);
+  sub.next_renewal = addBillingCycle(startDate, sub.period);
+  item.purchase_date = startDate;
+  item.updated_at = new Date().toISOString();
+
+  return settle({ startDate, nextRenewal: sub.next_renewal });
 }
 
 // ── Reads ───────────────────────────────────────────────────────────────────

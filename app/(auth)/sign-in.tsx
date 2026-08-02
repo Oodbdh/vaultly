@@ -15,6 +15,20 @@ import { completeAuthFromUrl } from '@/lib/authCallback';
 import { authRedirectTo } from '@/lib/authRedirect';
 import { supabase } from '@/lib/supabase';
 
+/**
+ * Whether to show "Continue with Apple".
+ *
+ * Off until an Apple Developer account, a Services ID and a signing key exist
+ * and the Apple provider is enabled on the Supabase project. Until then the
+ * button can only fail with `auth.errors.providerUnavailable`, so showing it
+ * just advertises a dead end.
+ *
+ * Nothing else is stubbed: `oauth('apple')` below, the `'apple'` union member,
+ * the translation keys and the shared callback handling are all still here and
+ * still correct. Re-enabling is this one flag — flip it to `true`.
+ */
+const APPLE_SIGN_IN_ENABLED = false;
+
 export default function SignIn() {
   const { t } = useTranslation();
   const { locale, textAlign } = useDirection();
@@ -118,7 +132,9 @@ export default function SignIn() {
             onPress={() => void resend()}
           />
         ) : null}
-        <Button variant="secondary" label={t('auth.continueWithApple')} onPress={() => void oauth('apple')} />
+        {APPLE_SIGN_IN_ENABLED ? (
+          <Button variant="secondary" label={t('auth.continueWithApple')} onPress={() => void oauth('apple')} />
+        ) : null}
         <Button variant="secondary" label={t('auth.continueWithGoogle')} onPress={() => void oauth('google')} />
 
         <View style={{ flexDirection: 'row', gap: spacing.xs, justifyContent: 'center' }}>

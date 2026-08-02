@@ -13,8 +13,9 @@ import { useDirection } from '@/i18n/rtl';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useAuthStore } from '@/store/authStore';
 import { usePremium } from '@/hooks/usePremium';
-import { usePaywall } from '@/hooks/usePaywall';
+import { restoreAlert, usePaywall } from '@/hooks/usePaywall';
 import { useSession } from '@/hooks/useSession';
+import { deleteAccount } from '@/services/profile';
 import { APP_VERSION, openSupportEmail, type SupportTopic } from '@/services/support';
 
 /**
@@ -36,7 +37,25 @@ export default function Profile() {
   const [warrantyReminders, setWarrantyReminders] = useState(true);
   const [renewalReminders, setRenewalReminders] = useState(true);
 
-  const soon = (label: string) => Alert.alert(label);
+  /**
+   * Restore, then say what happened. The result used to be discarded, so the
+   * row could never report success, "nothing to restore", or a store error.
+   */
+  async function runRestore() {
+    const { title, message } = restoreAlert(await restore(), t);
+    Alert.alert(title, message);
+  }
+
+  /** Erase the account, then sign out so the gate returns to the auth screens. */
+  async function removeAccount() {
+    if (!user) return;
+    const outcome = await deleteAccount(user.id);
+    if (outcome.status === 'failed') {
+      Alert.alert(t('settings.deleteAccount'), outcome.error);
+      return;
+    }
+    await signOut();
+  }
 
   /**
    * Opens the mail client; if the device has none, the composed message is on
@@ -105,7 +124,7 @@ export default function Profile() {
           <LinkRow
             label={t('profile.account')}
             icon="person-outline"
-            onPress={() => soon(t('profile.account'))}
+            onPress={() => router.push('/account')}
           />
           <Divider />
           <LinkRow
@@ -117,7 +136,7 @@ export default function Profile() {
           <LinkRow
             label={t('paywall.restore')}
             icon="refresh-outline"
-            onPress={() => void restore()}
+            onPress={() => void runRestore()}
           />
         </Section>
 
@@ -153,21 +172,6 @@ export default function Profile() {
           <Row label={t('settings.renewalReminders')} icon="repeat-outline">
             <Switch value={renewalReminders} onValueChange={setRenewalReminders} />
           </Row>
-          <Divider />
-          <LinkRow
-            label={t('profile.categories')}
-            icon="pricetags-outline"
-            onPress={() => soon(t('profile.categories'))}
-          />
-        </Section>
-
-        <Section title={t('profile.sectionData')}>
-          <LinkRow
-            label={t('profile.backup')}
-            hint={t('profile.backupHint')}
-            icon="cloud-upload-outline"
-            onPress={() => soon(t('profile.backup'))}
-          />
         </Section>
 
         <Section title={t('profile.sectionSupport')}>
@@ -233,7 +237,13 @@ export default function Profile() {
             onPress={() =>
               Alert.alert(t('settings.deleteAccount'), undefined, [
                 { text: t('common.cancel'), style: 'cancel' },
-                { text: t('common.delete'), style: 'destructive' },
+                // This button previously had no `onPress` at all, so confirming
+                // simply dismissed the dialog and nothing was deleted.
+                {
+                  text: t('common.delete'),
+                  style: 'destructive',
+                  onPress: () => void removeAccount(),
+                },
               ])
             }
           />

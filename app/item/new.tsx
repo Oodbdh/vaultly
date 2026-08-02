@@ -79,7 +79,10 @@ export default function NewItem() {
     setPurchaseDate(d.purchaseDate ?? '');
     // A stated term becomes the selected duration, even if it isn't a preset.
     if (d.warrantyMonths) {
-      setWarranty({ mode: 'custom', amount: String(d.warrantyMonths), unit: 'month' });
+      setWarranty({
+        mode: 'custom',
+        duration: { amount: String(d.warrantyMonths), unit: 'month' },
+      });
     }
     setStep('review');
     // Ask once what kind of purchase this is, rather than guessing silently.
@@ -124,7 +127,11 @@ export default function NewItem() {
     create.mutate(
       {
         kind: 'receipt',
+        // For a receipt these two mean exactly what they say: the shop, and the
+        // class of goods. `normalise()` has already rejected any category that
+        // is not on the canonical list, so a shop name cannot land here.
         merchantName: merchant.trim() || t('item.merchant'),
+        category: extraction?.category ?? null,
         totalAmount: total ? Number(total) : null,
         currency: extraction?.currency ?? 'SAR',
         purchaseDate: purchaseDate || null,

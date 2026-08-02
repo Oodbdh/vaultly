@@ -1,5 +1,21 @@
 # Vaultly — Project State & Production Handoff
 
+> ⚠️ **SUPERSEDED IN PLACES — read `HANDOVER.md` first.**
+>
+> `HANDOVER.md` was verified 2026-08-02 and is newer than this file. Where the
+> two disagree, **HANDOVER.md is correct**. Known drift in this document:
+>
+> - §5 lists `react-native-google-mobile-ads@^14.2.5` — it is **^15.8.3**, and
+>   it is the cause of the current Android launch crash and EAS build failure.
+> - §3 says `USE_MOCK_DATA` is read in exactly four places — it is now read in
+>   eight.
+> - §5 predates `expo-sharing` and `expo-dev-client` being added.
+> - §7 auth providers have changed: Google is now **enabled**.
+> - §19–§22 predate a large body of work; see HANDOVER.md §16 and §20.
+>
+> The architecture, design rationale, RTL/plural rules and historical bug
+> post-mortems below remain accurate and are still worth reading.
+
 **Last verified:** 2026-07-29 · every claim below was checked against the live
 project and the working tree on that date, not recalled.
 

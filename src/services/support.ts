@@ -84,6 +84,28 @@ export function composeSupportMessage(
   return { subject: subjectFor(topic, t), body };
 }
 
+/** Gmail's Android application id. */
+const GMAIL_ANDROID_PACKAGE = 'com.google.android.gm';
+
+/**
+ * The same mailto, addressed straight at Gmail on Android.
+ *
+ * `intent:<data>#Intent;package=…;end` keeps the mailto URI as the intent's
+ * *data* and pins the receiving app, so Gmail gets byte-for-byte the recipient,
+ * subject and body the mailto path builds — nothing is re-encoded or rebuilt.
+ *
+ * Pinning matters because some OEM mail apps register for the mailto intent,
+ * win the chooser, and then fail to send (HONOR's Mail is the reported case).
+ * Android throws ActivityNotFoundException when Gmail is absent, which is the
+ * signal to fall back.
+ *
+ * Safe to embed the mailto directly: `encodeURIComponent` escapes both `#` and
+ * `;`, the two characters that would otherwise terminate intent-URI parsing.
+ */
+function gmailIntentUrl(mailtoUrl: string): string {
+  return `intent:${mailtoUrl}#Intent;package=${GMAIL_ANDROID_PACKAGE};end`;
+}
+
 export async function openSupportEmail(
   topic: SupportTopic,
   t: (k: string) => string,
@@ -96,9 +118,29 @@ export async function openSupportEmail(
     `?subject=${encodeURIComponent(subject)}` +
     `&body=${encodeURIComponent(body)}`;
 
+  // Android only. iOS has no equivalent OEM-hijack problem, and reaching Gmail
+  // there would need an LSApplicationQueriesSchemes entry and a rebuild — so
+  // iOS keeps the mailto path exactly as it was.
+  if (Platform.OS === 'android') {
+    try {
+      await Linking.openURL(gmailIntentUrl(url));
+      return { status: 'opened' };
+    } catch {
+      // Gmail not installed, disabled, or it refused the intent — fall through
+      // to the unchanged mailto handling below.
+    }
+  }
+
   try {
-    // canOpenURL is unreliable for mailto on Android, so try the open and let
-    // it throw rather than pre-checking and refusing a link that would work.
+    // `openURL` resolves once the intent is dispatched, not once a composer
+    // actually appears — on Android with no mail client registered it can
+    // resolve having done nothing, which reported success while no mail was
+    // ever composed or sent. `mailto:` is a standard scheme, so `canOpenURL`
+    // answers it reliably (unlike the custom schemes that gave it its bad
+    // reputation) and lets the clipboard fallback actually be reached.
+    const handled = await Linking.canOpenURL(url).catch(() => true);
+    if (!handled) throw new Error('no mail client registered for mailto:');
+
     await Linking.openURL(url);
     return { status: 'opened' };
   } catch {

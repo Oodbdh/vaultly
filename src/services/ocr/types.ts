@@ -42,8 +42,36 @@ export type ExtractFn = (
   signal?: AbortSignal,
 ) => Promise<ExtractionResult>;
 
+/**
+ * Allowed `category` values — a closed list so the field cannot be answered
+ * with a shop name. `normalise()` enforces it again on the client, so an
+ * off-list value becomes null rather than being written to the database.
+ *
+ * Mirrored in supabase/functions/analyze-receipt/index.ts (CATEGORIES). That
+ * function is a separate Deno bundle and cannot import from src/, so the two
+ * copies must be edited together.
+ */
+export const RECEIPT_CATEGORIES = [
+  'Electronics', 'Groceries', 'Clothing', 'Restaurant', 'Pharmacy', 'Furniture',
+  'Fuel', 'Telecom', 'Entertainment', 'Health', 'Beauty', 'Home', 'Automotive',
+  'Books', 'Sports', 'Travel', 'Services', 'Other',
+] as const;
+
+export type ReceiptCategory = (typeof RECEIPT_CATEGORIES)[number];
+
 export const PROMPT = `You extract structured data from a photo of a purchase receipt or invoice.
 The receipt may be in English or Arabic; Saudi (SAR) receipts are common.
+
+Three fields are easy to confuse. Keep them strictly separate:
+  merchantName — WHO sold it (the shop/business).
+  productName  — WHAT was bought (the specific item).
+  category     — WHAT KIND of thing it is (a generic class of goods).
+Worked example — a Jarir Bookstore receipt for a Samsung 55" television:
+  merchantName = "Jarir Bookstore"
+  productName  = "Samsung 55\\" TV"
+  category     = "Electronics"
+Never put a shop name in productName or category. Never put a product name in
+merchantName or category. Never put a category in merchantName or productName.
 
 Rules:
 - purchaseType: "subscription" for a recurring service charge (streaming, software,
@@ -54,6 +82,11 @@ Rules:
   billing date, normalise it to yyyy-mm-dd; otherwise leave null.
 - productName: fill ONLY for products — the item bought, not the store.
 - merchantName: the store's trade name, in the language printed on the receipt.
+  This is the business, never the item and never the class of item.
+- category: the kind of goods or service the receipt is for. Choose exactly one of:
+  ${RECEIPT_CATEGORIES.join(', ')}.
+  Judge it from what was sold, not from the shop's name. Use "Other" when nothing
+  fits. This is NEVER the shop's name and NEVER the specific product.
 - totalAmount: the grand total actually paid, including VAT. Number only.
 - currency: ISO 4217 code. Default to "SAR" when a Saudi VAT number or ر.س appears.
 - purchaseDate: normalise to yyyy-mm-dd. Convert Hijri dates to Gregorian.
@@ -76,13 +109,28 @@ export const SCHEMA_PROPERTIES = {
   purchaseDate: { type: ['string', 'null'], description: 'yyyy-mm-dd' },
   warrantyExpiry: { type: ['string', 'null'], description: 'yyyy-mm-dd' },
   warrantyMonths: { type: ['integer', 'null'] },
-  category: { type: ['string', 'null'] },
+  category: { type: ['string', 'null'], enum: [...RECEIPT_CATEGORIES, null] },
   lineItemCount: { type: ['integer', 'null'] },
   confidence: { type: 'number' },
 } as const;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CYCLES = ['weekly', 'monthly', 'quarterly', 'yearly'] as const;
+
+/**
+ * Second gate on `category`, after the response schema's enum.
+ *
+ * Anything not on the list becomes null rather than being passed through, so a
+ * model that ignores the schema — or the Gemini provider, whose schema dialect
+ * has no enum support — still cannot put a shop name in the category column.
+ * Matched case-insensitively and returned in canonical casing.
+ */
+function canonicalCategory(v: unknown): ReceiptCategory | null {
+  if (typeof v !== 'string') return null;
+  const s = v.trim().toLowerCase();
+  if (!s) return null;
+  return RECEIPT_CATEGORIES.find((c) => c.toLowerCase() === s) ?? null;
+}
 
 /**
  * Never trust the model's JSON directly — a hallucinated date or a string where
@@ -107,7 +155,7 @@ export function normalise(raw: Partial<ReceiptExtraction>): ReceiptExtraction {
     purchaseDate: date(raw.purchaseDate),
     warrantyExpiry: date(raw.warrantyExpiry),
     warrantyMonths: num(raw.warrantyMonths),
-    category: typeof raw.category === 'string' ? raw.category : null,
+    category: canonicalCategory(raw.category),
     lineItemCount: num(raw.lineItemCount),
     confidence: Math.min(1, Math.max(0, num(raw.confidence) ?? 0)),
   };

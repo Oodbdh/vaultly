@@ -18,8 +18,35 @@ const MAX_BASE64_CHARS = 8_000_000;
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
+/**
+ * Allowed `category` values. Closed list on purpose: it is the only thing that
+ * makes it structurally impossible for the model to answer the category
+ * question with a shop name, which is exactly what it used to do when the
+ * prompt said nothing about the field.
+ *
+ * Mirrored in src/services/ocr/types.ts (RECEIPT_CATEGORIES). The Edge Function
+ * is a separate Deno bundle and cannot import from src/, so the two copies must
+ * be edited together.
+ */
+const CATEGORIES = [
+  'Electronics', 'Groceries', 'Clothing', 'Restaurant', 'Pharmacy', 'Furniture',
+  'Fuel', 'Telecom', 'Entertainment', 'Health', 'Beauty', 'Home', 'Automotive',
+  'Books', 'Sports', 'Travel', 'Services', 'Other',
+];
+
 const PROMPT = `You extract structured data from a photo of a purchase receipt or invoice.
 The receipt may be in English or Arabic; Saudi (SAR) receipts are common.
+
+Three fields are easy to confuse. Keep them strictly separate:
+  merchantName — WHO sold it (the shop/business).
+  productName  — WHAT was bought (the specific item).
+  category     — WHAT KIND of thing it is (a generic class of goods).
+Worked example — a Jarir Bookstore receipt for a Samsung 55" television:
+  merchantName = "Jarir Bookstore"
+  productName  = "Samsung 55\\" TV"
+  category     = "Electronics"
+Never put a shop name in productName or category. Never put a product name in
+merchantName or category. Never put a category in merchantName or productName.
 
 Rules:
 - purchaseType: "subscription" for a recurring service charge (streaming, software,
@@ -30,6 +57,11 @@ Rules:
   billing date, normalise it to yyyy-mm-dd; otherwise leave null.
 - productName: fill ONLY for products — the item bought, not the store.
 - merchantName: the store's trade name, in the language printed on the receipt.
+  This is the business, never the item and never the class of item.
+- category: the kind of goods or service the receipt is for. Choose exactly one of:
+  ${CATEGORIES.join(', ')}.
+  Judge it from what was sold, not from the shop's name. Use "Other" when nothing
+  fits. This is NEVER the shop's name and NEVER the specific product.
 - totalAmount: the grand total actually paid, including VAT. Number only.
 - currency: ISO 4217 code. Default to "SAR" when a Saudi VAT number or ر.س appears.
 - purchaseDate: normalise to yyyy-mm-dd. Convert Hijri dates to Gregorian.
@@ -53,7 +85,9 @@ const SCHEMA_PROPERTIES = {
   purchaseDate: { type: ['string', 'null'], description: 'yyyy-mm-dd' },
   warrantyExpiry: { type: ['string', 'null'], description: 'yyyy-mm-dd' },
   warrantyMonths: { type: ['integer', 'null'] },
-  category: { type: ['string', 'null'] },
+  // Enum, not free text: Structured Outputs then rejects anything off-list at
+  // the API boundary, so a merchant name cannot reach the category column.
+  category: { type: ['string', 'null'], enum: [...CATEGORIES, null] },
   lineItemCount: { type: ['integer', 'null'] },
   confidence: { type: 'number' },
 };

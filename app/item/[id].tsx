@@ -4,6 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
+import * as Sharing from 'expo-sharing';
+
+import { Button } from '@/components/Button';
+import { ImageViewer } from '@/components/ImageViewer';
 import { PressableCard } from '@/components/PressableCard';
 import { RenewalCountdown } from '@/components/RenewalCountdown';
 import { SkeletonBlock, SkeletonList } from '@/components/Skeleton';
@@ -12,7 +16,9 @@ import { resolveStatus, StatusBadge } from '@/components/StatusBadge';
 import { colors, radius, spacing, typeScale } from '@/theme';
 import { useDirection, formatCurrency, formatDate } from '@/i18n/rtl';
 import { useDeleteItem, useItem } from '@/hooks/useItems';
-import { signedReceiptUrl } from '@/services/storage';
+import { useRenewSubscription } from '@/hooks/useCreateSubscription';
+import { graceRemaining, renewalWindow } from '@/lib/subscriptionRenewal';
+import { localCopyForSharing, signedReceiptUrl } from '@/services/storage';
 import { scheduleWarrantyReminders } from '@/services/notifications';
 
 /**
@@ -28,8 +34,17 @@ export default function ItemDetail() {
   const router = useRouter();
   const { data: item, isLoading } = useItem(id!);
   const del = useDeleteItem();
+  const renew = useRenewSubscription(id!);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [reminderSet, setReminderSet] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  // Re-render each minute so the grace countdown ticks and the button vanishes
+  // the moment the window closes, without needing a manual refresh.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (item?.image_path) void signedReceiptUrl(item.image_path).then(setImageUrl).catch(() => {});
@@ -49,6 +64,37 @@ export default function ItemDetail() {
   const vaultItem = item;
   const expiresOn = item.warranty?.expires_on ?? null;
   const sub = item.subscription ?? null;
+
+  // Subscription renewal grace window. `renewalWindow` returns "not renewable"
+  // for anything without a valid renewal date, so warranties and receipts fall
+  // straight through.
+  const renewal = renewalWindow(sub?.next_renewal, now);
+  const grace = graceRemaining(renewal.msLeft);
+  const graceLabel = [
+    grace.days > 0 ? t('subscription.renewDays', { count: grace.days }) : null,
+    t('subscription.renewHours', { count: grace.hours }),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  /**
+   * `merchant_name` and `category` hold different things per kind (the shape
+   * documented in src/mocks/seed.ts): merchant_name is the shop on a receipt,
+   * the product on a warranty and the service on a subscription; category is a
+   * real category only on a receipt, and the shop otherwise.
+   *
+   * This screen used to label both columns literally, so a warranty read
+   * "Merchant: Samsung 55" TV / Category: Jarir Bookstore" — the two swapped.
+   * Labelling them for what they actually hold fixes that without touching the
+   * schema or how any of the three kinds are written.
+   */
+  const primaryLabel =
+    item.kind === 'warranty'
+      ? t('form.productName')
+      : item.kind === 'subscription'
+        ? t('form.serviceName')
+        : t('item.merchant');
+  const secondaryLabel = item.kind === 'receipt' ? t('item.category') : t('item.merchant');
   const { status, days } = resolveStatus({
     kind: item.kind,
     warrantyExpiresOn: expiresOn,
@@ -67,9 +113,37 @@ export default function ItemDetail() {
     ]);
   }
 
+  /**
+   * Share the receipt itself when there is one.
+   *
+   * The old version passed the signed URL to RN's `Share`, which shares a
+   * *link* on iOS and silently drops `url` altogether on Android — so it only
+   * ever sent the title text. `expo-sharing` hands a real local file to the
+   * system sheet, which is what WhatsApp, Telegram, Messages and Mail need.
+   *
+   * Text sharing stays as the fallback for an item with no image.
+   */
   async function share() {
-    if (!imageUrl) return;
-    await Share.share({ url: imageUrl, message: `${vaultItem.merchant_name} — Vaultly` });
+    const caption = `${vaultItem.merchant_name} — Vaultly`;
+
+    if (vaultItem.image_path) {
+      try {
+        const localUri = await localCopyForSharing(vaultItem.image_path);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(localUri, {
+            mimeType: localUri.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg',
+            dialogTitle: caption,
+            UTI: 'public.image',
+          });
+          return;
+        }
+      } catch {
+        // Offline, an expired signed URL, or no sharing service — fall through
+        // to text rather than leaving the button doing nothing.
+      }
+    }
+
+    await Share.share({ message: caption });
   }
 
   async function remindMe() {
@@ -140,7 +214,7 @@ export default function ItemDetail() {
       >
         {/* The artefact, large — Wallet leads with the pass, not with metadata */}
         <PressableCard
-          onPress={imageUrl ? () => {} : undefined}
+          onPress={imageUrl ? () => setViewerOpen(true) : undefined}
           accessibilityLabel={t('actions.viewReceipt')}
           style={{ padding: 0, overflow: 'hidden', height: 320 }}
         >
@@ -201,6 +275,21 @@ export default function ItemDetail() {
           />
         ) : null}
 
+        {/* Subscriptions only: an expired one can be renewed in place for 48h.
+            Once the window closes the row is history and this disappears. */}
+        {sub && renewal.renewable ? (
+          <View style={{ gap: spacing.sm }}>
+            <Button
+              label={renew.isPending ? t('common.loading') : t('subscription.renew')}
+              disabled={renew.isPending}
+              onPress={() => renew.mutate()}
+            />
+            <Text style={[type.caption, { color: colors.textMuted, textAlign }]}>
+              {t('subscription.renewAvailableFor', { duration: graceLabel })}
+            </Text>
+          </View>
+        ) : null}
+
         <View style={{ gap: spacing.sm }}>
           <Label>{t('detail.overview')}</Label>
           <View
@@ -212,7 +301,7 @@ export default function ItemDetail() {
               paddingHorizontal: spacing.lg,
             }}
           >
-            <Detail label={t('item.merchant')} value={item.merchant_name} />
+            <Detail label={primaryLabel} value={item.merchant_name} />
             <Divider />
             <Detail
               label={t('item.purchaseDate')}
@@ -228,7 +317,7 @@ export default function ItemDetail() {
               }
             />
             <Divider />
-            <Detail label={t('item.category')} value={item.category ?? '—'} />
+            <Detail label={secondaryLabel} value={item.category ?? '—'} />
             <Divider />
             <Detail
               label={t('item.warrantyExpiry')}
@@ -306,6 +395,10 @@ export default function ItemDetail() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Sits outside the ScrollView: a Modal renders in its own layer, so this
+          adds nothing to the page and changes no existing layout. */}
+      <ImageViewer uri={imageUrl} visible={viewerOpen} onClose={() => setViewerOpen(false)} />
     </>
   );
 
