@@ -8,11 +8,12 @@ not be verified, it says so explicitly rather than guessing.
 >
 > - All 43 files of uncommitted work are now **committed** (`62a0b80`). §15 is
 >   history, not a warning.
-> - `react-native-google-mobile-ads` has been **removed** (`ffb023a`) — the
->   recommended fix in §14 is now applied. **The crash is not confirmed fixed:**
->   there is still no `adb` here, so no dev build has been launched since.
->   Rebuild the dev client and check.
-> - Next action is therefore **§20 step 4**, not step 1.
+> - `react-native-google-mobile-ads` has been **removed** (`ffb023a`).
+> - **The Android launch crash is CONFIRMED FIXED.** The logcat trace was
+>   captured on-device and named the cause exactly; a rebuilt dev client
+>   (EAS `47f9d9c9`, commit `d53306c`) launches, reaches `.MainActivity` and runs
+>   JS. §14 has the trace and the verification.
+> - Next action is **§20 step 2** (Google OAuth in the dev build).
 
 **Read this first, then `PROJECT_STATE.md`.** This file is newer and supersedes
 it wherever the two disagree (`PROJECT_STATE.md` was last verified 2026-07-29
@@ -24,12 +25,12 @@ and has drifted — see §16).
 
 Vaultly is an Expo SDK 54 / React Native 0.81 mobile app for tracking receipts,
 warranties and subscriptions. It is **feature-complete against the design** and
-type-clean with 76 passing tests. All work is now committed. The immediate
-blocker was that **the Android development build crashed on launch before any
-JavaScript ran** (§14); the diagnosed cause — an autolinked Google Mobile Ads
-SDK with a blank `APPLICATION_ID` — has been removed, but **no dev build has
-been launched since, so the fix is unproven**. Behind that sit two auth flows
-that cannot complete in Expo Go by design (§8, §9).
+type-clean with 76 passing tests. All work is now committed. The blocker that
+dominated this project — **the Android development build crashing on launch
+before any JavaScript ran** — is **fixed and verified on-device** (§14): an
+autolinked Google Mobile Ads SDK with a blank `APPLICATION_ID` threw from
+`MobileAdsInitProvider` during `handleBindApplication`. The remaining known gaps
+are two auth flows that cannot complete in Expo Go by design (§8, §9).
 
 **Verification gates, run 2026-08-02 after the AdMob removal:**
 
@@ -40,7 +41,9 @@ that cannot complete in Expo Go by design (§8, §9).
 | Android bundle | Metro, cold | HTTP 200, 9.64 MB (was 10.02) |
 | iOS bundle | Metro, cold | HTTP 200, 9.65 MB (was 10.03) |
 | Android prebuild | `expo prebuild --clean -p android` | clean; **no ads refs, no ads meta-data** |
-| Android dev build | launch on device | **not retested — no adb here** |
+| EAS dev build | `47f9d9c9` from `d53306c` | **finished** |
+| Android dev build | launch on device, no Metro | **launches** — dev launcher renders |
+| Android dev build | launch with Metro | **`.MainActivity` + JS running** |
 
 ---
 
@@ -407,23 +410,40 @@ warranties. It is now kind-aware. **No schema change was made.**
 
 ---
 
-## 14. 🟠 Android development build crash — fix applied, **unverified**
+## 14. ✅ Android development build crash — CONFIRMED AND FIXED
 
-**Status:** the diagnosed cause was removed in `ffb023a`. **Nobody has launched a
-dev build since**, so this is not yet closed. Rebuild the dev client; if it still
-crashes, the diagnosis below was wrong and you need the logcat trace.
+**Symptom (historical):** the dev build exited immediately on launch. No red box,
+no JS error, and it happened with Metro not running.
 
-**Symptom:** the dev build exits immediately on launch. No red box, no JS error.
+**The trace, captured on-device 2026-08-02** from the crashing build
+(`62f7a2ef`, commit `a5fa077`, versionCode 5) on an HONOR X9a 5G, Android 13:
 
-**I do not have the stack trace.** There is **no Android SDK and no `adb`** on
-this machine (searched `ANDROID_HOME`, `%LOCALAPPDATA%\Android`, `C:\Android`,
-both Program Files trees). Capture it with:
-
-```bash
-adb logcat -c && adb logcat *:E AndroidRuntime:E
+```
+FATAL EXCEPTION: main
+Process: com.adialfaifi.vaultly, PID: 31635
+java.lang.RuntimeException: Unable to get provider
+    com.google.android.gms.ads.MobileAdsInitProvider:
+    java.lang.IllegalStateException: Invalid application ID.
+  at android.app.ActivityThread.installProvider(ActivityThread.java:8703)
+  at android.app.ActivityThread.installContentProviders(ActivityThread.java:8198)
+  at android.app.ActivityThread.handleBindApplication(ActivityThread.java:7924)
+Caused by: java.lang.IllegalStateException: Invalid application ID
+  at ...client.zzey.attachInfo(play-services-ads-api@@24.6.0:12)
+  at ...ads.MobileAdsInitProvider.attachInfo(play-services-ads-api@@24.6.0:1)
 ```
 
-**Evidence gathered locally (all verified):**
+`installContentProviders` runs inside `handleBindApplication`, i.e. **before**
+`Application.onCreate()` and long before React Native starts — which is exactly
+why no JS ran and why Metro was irrelevant. It was the only fatal error in the
+log; everything else was the process dying as a consequence.
+
+**Getting `adb` here:** there is no Android SDK on this machine. Platform-tools
+were unpacked standalone into a scratch dir (no system install, no PATH change);
+`winget install Google.PlatformTools` fails with a stale-manifest hash mismatch.
+On the phone, USB debugging exposes a third USB interface (`MI_02`, "ADB
+Interface") — if you only see `MI_00`/`MI_01`, debugging is not actually on.
+
+**Evidence gathered locally beforehand (all verified, all consistent):**
 
 1. `react-native-google-mobile-ads` **is autolinked**. From
    `android/build/generated/autolinking/autolinking.json` the Android-linked
@@ -453,10 +473,6 @@ exactly, and explains why Expo Go never showed it (no native modules there).
 **Ruled out** (none of these has run at crash time): RevenueCat (lazy JS require),
 Supabase (pure JS), Expo Router, `expo-dev-client`.
 
-**Confidence: high, not proven.** The evidence above is all circumstantial —
-config, manifests and the module's own build-time warning. No stack trace was
-ever seen.
-
 **Fix, APPLIED in `ffb023a`:** `react-native-google-mobile-ads` removed from
 `dependencies`; the conditional plugin block and both
 `config.googleMobileAdsAppId` entries deleted from `app.config.ts`;
@@ -465,11 +481,26 @@ pass, both bundles HTTP 200 and 0.4 MB smaller, and a `--clean` Android prebuild
 produces a project with **zero** `google-mobile-ads` references and **no** ads
 `meta-data` in `AndroidManifest.xml`.
 
-**What that does and does not prove.** It proves the empty `APPLICATION_ID` can
-no longer be present, because the SDK is no longer in the build at all. It does
-**not** prove that was the crash. Confirm by launching a rebuilt dev client. If
-it still crashes, get the trace — everything above becomes wrong and the search
-restarts.
+**Verified end to end on-device, 2026-08-02.** Rebuilt as EAS `47f9d9c9` from
+commit `d53306c` (native fingerprint changed `2e4aee3a…` → `59f73124…`),
+installed over ADB, launched with cleared log buffers and **no Metro running**:
+
+| Check | Result |
+|---|---|
+| `logcat -b crash` after launch | **no fatal exceptions** |
+| Process after 25 s | **alive** |
+| `MobileAds` / `gms.ads` in any buffer | **none** |
+| Resumed activity, no Metro | `DevLauncherActivity` (dev launcher UI renders) |
+| Resumed activity, Metro attached | **`.MainActivity`** |
+| JS | `ReactNativeJS: Running "main" … "fabric":true` |
+
+**Why the fix works:** `MobileAdsInitProvider` is declared in the
+`play-services-ads` AAR's manifest, which reached the merged manifest only via
+autolinking of the npm package. With the package gone the provider is not
+declared, so `installContentProviders` has nothing to instantiate and cannot
+throw. Confirmed absent: no `play-services-ads` / `gms.ads` anywhere in a
+regenerated `android/`, and neither `react-native-purchases` nor
+`expo-notifications` pulls it in transitively.
 
 **Related, same package:** an earlier EAS Android build failed with Kotlin
 `Unresolved reference: currentActivity` / `runOnUiThread` in this module. The API
@@ -557,8 +588,8 @@ since the env vars are empty).
 
 | Issue | Severity | Notes |
 |---|---|---|
-| **Android dev build crashes on launch** | 🟠 Fix applied, unverified | §14 — cause removed in `ffb023a`, never retested |
-| **EAS Android build fails** (Kotlin, AdMob module) | 🟠 Fix applied, unverified | §14 — the failing module is gone; the build has not been re-run |
+| ~~Android dev build crashes on launch~~ | ✅ Fixed & verified | §14 — trace captured, `ffb023a`, relaunched OK |
+| ~~EAS Android build fails~~ (Kotlin, AdMob module) | ✅ Fixed | The failing module is gone; EAS `47f9d9c9` finished successfully |
 | Google OAuth cannot complete in Expo Go | 🟠 High | §8 — needs a dev build |
 | Email verification cannot complete in Expo Go | 🟠 High | Same root cause as §8 |
 | `profiles.locale` CHECK allows only `('en','ar')` | 🟠 High | App ships 5 locales. Switching to es/fr/de raises 23514 and **fails silently** (`void`-ed update). Fix written in `migrations/0004_profile_prefs.sql` — **not applied** |
@@ -624,14 +655,14 @@ Long-form prose lives in `src/content/support.ts`, **en + ar only**.
 ~~2. Remove `react-native-google-mobile-ads`.~~ **Done** — `ffb023a`.
 ~~3. `git add -A && git commit`.~~ **Done** — `62a0b80`.
 
-1. **Rebuild the dev client and verify the app launches.** This is the whole
-   ballgame — §14's fix is applied but unproven, and everything below is blocked
-   behind a launchable build.
-   ```
-   eas build --profile development --platform android
-   ```
-   If it still crashes, install the Android platform-tools and get the trace:
-   `adb logcat -c && adb logcat *:E AndroidRuntime:E`.
+~~4. Rebuild the dev client and verify the app launches.~~ **Done** — EAS
+   `47f9d9c9`, installed and launched, JS runs. §14.
+
+1. **Set the Supabase env vars on EAS.** `.env` is local-only, so cloud builds
+   have no `EXPO_PUBLIC_SUPABASE_URL` / `_ANON_KEY` baked in — EAS reported *"No
+   environment variables … found for the development environment"*. The build
+   launches fine, but any standalone (non-Metro) use of it talks to nothing.
+   `eas env:create` or the project's Environment Variables page.
 2. **Verify Google OAuth in the dev build** — §8 predicts it works there, since
    `vaultly://auth-callback` is honoured. Confirm in Supabase → URL Configuration
    that Site URL and Redirect URLs are as expected.
