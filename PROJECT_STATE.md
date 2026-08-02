@@ -29,10 +29,10 @@
 >   the `returnUrl` that `openAuthSessionAsync` compares against, so the browser
 >   resolved `dismiss` and the code was silently dropped.
 >
-> **Open and actively being traced:** the email-change flow. `/verify` returns
-> `?message=` rather than `?code=`, so `exchangeCodeForSession` is never called
-> and `new_email` stays pending server-side. Blocked on a Supabase email rate
-> limit — see the end of §21 for exactly what to check next.
+> - Email change — **fixed** (`1a493da`). Two defects: the callback screen read
+>   a stale launch URL instead of the router's params, so the PKCE code was never
+>   exchanged; and a `?message=` reply was treated as "not an auth link", hiding
+>   the fact that **secure email change needs both links confirmed**. See §21.
 >
 > The architecture, design rationale, RTL/plural rules and historical bug
 > post-mortems below remain accurate and are still worth reading.
@@ -747,40 +747,56 @@ mislabelled-chip bug; keep them sharing.
 | Expo warns TypeScript ~5.3.3 expected | Cosmetic | **Ignore.** Reverting reintroduces a real bug (§24) |
 | OneDrive sync races | Annoyance | Files can change mid-edit |
 
-### Email change — open, traced, blocked on a rate limit
+### Email change — RESOLVED (`1a493da`)
 
-**Symptom:** request an email change, click the link, app opens, address never
-updates. Server keeps `email = <old>` and `new_email = <pending>` indefinitely.
+**Symptom was:** request an email change, click the link, app opens, address
+never updates; server holds `email_change` pending indefinitely.
 
-**Established by instrumented device traces (2026-08-02):**
+**Two independent defects, both confirmed by instrumented device traces, not
+inferred:**
 
-| Step | Result |
-|---|---|
-| `updateUser({ email })` | ✅ works — `new_email` set, `redirectTo` correct |
-| `/verify` link | ⚠️ redirects to `vaultly://auth-callback?message=…` — **no `code`** |
-| `completeAuthFromUrl()` | ❌ returns `ignored`; also received a **stale** URL |
-| `refreshSession()` / `refreshUser()` | ✅ both fine — they correctly return the old address, because the server still holds it |
+**1. Secure email change requires *two* confirmations.** It is **enabled** on
+this project. GoTrue's verbatim reply to the first link:
 
-**Root cause is at the `/verify` step, not in refresh.** The token is
-`pkce_…`, and in PKCE the account mutation only commits when the client calls
-`exchangeCodeForSession(code)`. No code is ever issued, so nothing can commit.
-*Secure email change is ruled out* — only one mail is sent, to the new address.
+> "Confirmation link accepted. Please proceed to confirm link sent to the other
+> email"
 
-**Next steps** (blocked: Supabase email rate limit reached):
-1. Dashboard → Auth → Providers → Email → check **"Secure email change"**. Not
-   exposed via the anon key — `/auth/v1/settings` does not return it.
-2. Dashboard → Auth → **Logs**, find the `/verify` request and read its outcome.
-3. Re-click a fresh link and capture the **value** of `?message=` — that string
-   decides the fix and was never captured.
+and `auth.users.email_change_confirm_status` sits at **1** until the second link
+is opened. An earlier belief that only one mail is sent was **wrong** — both
+addresses receive one, and clicking both completes the change (observed live:
+user `3b9a5850` moved to its new address, pending cleared).
 
-**Second, independently confirmed defect that will bite the moment a `code`
-*is* issued:** `app/auth-callback.tsx:28` reads the link via
-`Linking.useURL()`, which returned the **stale dev-client launch URL on every
-single mount** across two days of traces — it never once saw a real deep link.
-Google Sign-In survives this only because `sign-in.tsx` has an independent
-handler; the email path has no backup. Expect the real fix to be *both* a
-`message` branch in `completeAuthFromUrl` and sourcing the URL from expo-router
-route params instead of `Linking.useURL()`.
+`completeAuthFromUrl` had no branch for `?message=`, so this fell through to
+`ignored` and the screen silently replaced to Home. That is why it read as
+"nothing happened" instead of "one more step".
+
+**2. The callback screen never saw the deep link.** It read the URL via
+`Linking.useURL()`, which resolves `getInitialURL()` (the *launch* URL) and
+otherwise waits for a `url` event that has already fired by the time the screen
+mounts. Under the dev launcher the launch URL is permanently
+`vaultly://expo-development-client/?url=…`. Traces showed the router holding the
+real value while the handler got the stale one:
+
+```
+callback routeParams= {"code":"<redacted len=36>"}
+callback useURL=      vaultly://expo-development-client/?url=…
+parsed keys= ["url"] -> IGNORED
+```
+
+so `exchangeCodeForSession` was never called. Google Sign-In survived this only
+because `sign-in.tsx` has an independent handler; the email path had no backup.
+
+**Fix:** route params are now the primary source in `app/auth-callback.tsx`
+(`useURL()` kept as fallback — the implicit flow puts tokens in the fragment,
+which the router does not expose), plus a `notice` status that surfaces GoTrue's
+own wording. **It was never a refresh bug** — `refreshSession()` / `refreshUser()`
+were correct throughout and returned the old address because the server still
+held it.
+
+⚠️ **Still worth deciding:** the app tells the user to check only the *new*
+address (`account.emailPending`). With secure email change on, they must open
+**both** links. Either reword that string in all five locales, or turn "Secure
+email change" off in the dashboard — a product/security call, not made here.
 
 **Fixed, recorded so they are not reintroduced:**
 
