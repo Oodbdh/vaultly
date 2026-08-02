@@ -167,7 +167,7 @@ vaultly/
 │   ├── functions/analyze-receipt/     DEPLOYED
 │   ├── functions/delete-account/      DEPLOYED
 │   ├── functions/grant-bonus-slot/    DEPLOYED
-│   └── functions/revenuecat-webhook/  NOT deployed
+│   └── functions/revenuecat-webhook/  DEPLOYED (verify_jwt false)
 ├── app/                        (21 route files — see §16)
 └── src/                        (67 files — see §3)
 ```
@@ -382,7 +382,12 @@ live and correct. Re-adding AdMob is what activates it.
 | `analyze-receipt` | **ACTIVE**, version 3 | `true` |
 | `delete-account` | **ACTIVE**, version 1 | `true` |
 | `grant-bonus-slot` | **ACTIVE**, version 1 (deployed 2026-08-02) | `true` |
-| `revenuecat-webhook` | in repo, **not deployed** | — |
+| `revenuecat-webhook` | **ACTIVE**, version 1 (deployed 2026-08-02) | **`false`** |
+
+⚠️ `revenuecat-webhook` **must** stay `verify_jwt: false`. RevenueCat authenticates
+with its own `Authorization: Bearer <REVENUECAT_WEBHOOK_SECRET>`, which is not a
+Supabase JWT — with verification on, the gateway rejects every delivery with 401
+before the function runs. Deploy it with `--no-verify-jwt`.
 
 Deploy with `npm run fn:deploy` (which passes `--use-api`; **Docker is not
 installed** on this machine and the default deploy path wants it).
@@ -450,17 +455,39 @@ The paywall therefore falls back to the static `SAR 10` label and the purchase
 button cannot complete. `usePremium().isPremium` is the single gate every
 monetization decision reads.
 
-**To activate:**
+**Server side: DONE and verified 2026-08-02.**
+
+- `revenuecat-webhook` **deployed**, `verify_jwt: false` (§9).
+- `REVENUECAT_WEBHOOK_SECRET` **set** as a Supabase secret.
+- Verified by driving the live function with synthetic RevenueCat events:
+  no auth → 401; wrong secret → 401; unrelated entitlement → `ignored`;
+  `INITIAL_PURCHASE` + `premium_access` → `profiles.plan_tier` `free → premium`,
+  `premium_until` set, `is_premium()` true, `item_allowance()` `4 → 2147483647`,
+  and **only** the targeted user changed. A rolled-back transaction then proved
+  premium really bypasses `enforce_item_quota` — 12 items accepted where free
+  stops at 5. `CANCELLATION` and `EXPIRATION` returned the row to exactly its
+  original state.
+
+**Still required (all external, none of it code):**
 1. Create the SAR 10/month product in App Store Connect and Play Console.
-2. Configure a RevenueCat project; entitlement id must be **`premium_access`**;
-   offering id **`default`**.
-3. Set `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `_ANDROID_KEY`.
-4. Deploy `revenuecat-webhook` and set `REVENUECAT_WEBHOOK_SECRET`, so
-   `profiles.plan_tier` / `premium_until` mirror server-side.
-5. Build a dev client — this cannot be tested in Expo Go.
+2. Create a RevenueCat project; entitlement id must be **`premium_access`**,
+   offering id **`default`**; add the webhook URL + the secret above.
+3. Put the SDK keys in `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `_ANDROID_KEY`
+   (and in EAS env vars — `.env` is local-only). **This is a pure drop-in: the
+   path `.env` → `app.config.ts extra` → `config.ts` → `purchases.ts` is already
+   complete and needs no code change.** Until a key is present,
+   `configurePurchases()` returns early, `configured` stays false, and every
+   call degrades: `getMonthlyPackage()` → nulls, `restorePurchases()` → null
+   (surfacing as `unavailable`).
+4. Test on a dev client — impossible in Expo Go.
 
 The Supabase user id is passed as the RevenueCat App User ID so entitlements
 follow the account across devices and the webhook can map back to a profile row.
+
+⚠️ **Known race, deliberately not addressed:** after a purchase the *client*
+flips to premium instantly (`setInfo` → `isPremium`), but `profiles` only
+updates when the webhook lands. A 6th item added in that window can still be
+rejected by `enforce_item_quota`. Fixing it means touching quota logic.
 
 ---
 
@@ -715,8 +742,8 @@ mislabelled-chip bug; keep them sharing.
 
 **Before monetization**
 
-8. RevenueCat: store products, entitlement `premium_access`, keys, deploy
-   `revenuecat-webhook` + secret (§11).
+8. RevenueCat: store products, entitlement `premium_access`, SDK keys. The
+   webhook and its secret are already deployed and verified (§11).
 9. AdMob: re-add `react-native-google-mobile-ads` with **real** app IDs + rewarded
    unit IDs. `grant-bonus-slot` is already deployed and verified (§8a, §14).
 10. `eas init` → `EAS_PROJECT_ID`; build a dev client. Neither RevenueCat nor
@@ -835,7 +862,7 @@ Ordered. Items 1–4 unblock everything else.
 [ ] 11. eas init → EAS_PROJECT_ID; eas build --profile development
 [ ] 12. On the dev client: verify push tokens, RevenueCat, AdMob
 [x] 13. Deploy grant-bonus-slot            (done 2026-08-02)
-[ ] 13b. Deploy revenuecat-webhook
+[x] 13b. Deploy revenuecat-webhook + set secret   (done 2026-08-02, verified)
 [ ] 14. RevenueCat products + entitlement premium_access + keys
 [ ] 15. Re-add react-native-google-mobile-ads + AdMob app IDs + rewarded unit IDs
 [ ] 16. Enable Google/Apple providers, or remove the buttons
@@ -993,7 +1020,8 @@ Note the entry path — this is an expo-router project, so `/index.bundle` 404s.
 | Storage | ✅ Configured | Upload never executed |
 | Notifications (local) | ⚠️ Implemented | Not observed firing |
 | Notifications (push) | ❌ Blocked | Needs EAS_PROJECT_ID + dev build |
-| RevenueCat | ❌ Not configured | Store products, keys, webhook |
+| RevenueCat — code + webhook | ✅ Done & verified | — |
+| RevenueCat — store side | ❌ Not started | Store products, RevenueCat project, SDK keys |
 | Free storage model (§8a) | ✅ Live & verified | Ad itself blocked on AdMob |
 | AdMob | ❌ Package removed | Re-add pkg + real app IDs; server side is done |
 | Legal content | ⚠️ Drafted | Placeholder + needs review |
