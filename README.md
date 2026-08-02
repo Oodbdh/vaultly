@@ -253,15 +253,25 @@ enforced twice — client for UX, database for truth:
 
 | | Free | Premium (`premium_access`, 10 SAR/mo) |
 |---|---|---|
-| Items | 4 | Unlimited |
-| Rewarded ads | +1 slot per ad, 24h, max 2 active | Never shown |
+| Items | 4 permanent | Unlimited |
+| Rewarded ad | **One ad, once per account → +1 permanent slot (5 total). Never expires, never offered again.** | Never shown |
+| Past 5 items | Paywall only | — |
 
-- `useItemQuota()` is the only quota API the UI touches.
+- `useItemQuota()` is the only quota API the UI touches. It exposes
+  `bonusUnlocked` (0 or 1) and `canWatchAd`; once the reward is claimed
+  `canWatchAd` is false forever and every ad affordance disappears.
 - The DB trigger `enforce_item_quota` + `item_allowance(uid)` reject over-quota
   inserts regardless of client state; `receipts.ts` maps that error to
   `QuotaExceededError` so the UI can open the paywall.
-- Bonus slots are minted by the `grant-bonus-slot` Edge Function only after the
+- "Once per account" is guaranteed by the **`bonus_slots_user_once` unique
+  constraint**, not just by application code — a second grant cannot be inserted
+  even if the Edge Function is called twice.
+- The slot is minted by the `grant-bonus-slot` Edge Function only after the
   AdMob SDK fires `EARNED_REWARD`. Clients cannot insert into `bonus_slots` (RLS).
+- ⚠️ `react-native-google-mobile-ads` is currently **not installed** (removed to
+  fix the Android launch crash), so `showRewardedAd()` reports `unavailable` in
+  live mode and the grant path is unreachable from the UI until it is re-added
+  with real app IDs. The server side is deployed and verified.
 - `usePremium().showAds` is the single ad gate — premium is ad-free by construction.
 
 ## Known gaps (deliberate, for the next pass)

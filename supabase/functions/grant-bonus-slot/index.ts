@@ -1,12 +1,16 @@
-// Mints a rewarded-ad bonus slot for the calling user.
-// Runs with the service role so it can write bonus_slots (clients cannot),
-// and enforces the 2-concurrent-slot ceiling server-side.
+// Mints the one-off permanent bonus slot for the calling user.
 //
-// Deploy: supabase functions deploy grant-bonus-slot
+// Runs with the service role so it can write bonus_slots (clients cannot, by
+// RLS), which is what stops a user minting slots without watching an ad.
+//
+// The reward is permanent and claimable exactly once per account. There is no
+// expiry and no concurrency ceiling: either the user has their extra slot or
+// they do not. `bonus_slots_user_once` (unique on user_id) is the authority —
+// the pre-check below is only there to return a friendlier status than a raw
+// constraint violation.
+//
+// Deploy: supabase functions deploy grant-bonus-slot --use-api
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-
-const TTL_HOURS = 24;
-const MAX_CONCURRENT = 2;
 
 Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization');
@@ -28,18 +32,23 @@ Deno.serve(async (req) => {
   const { count } = await admin
     .from('bonus_slots')
     .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .gt('expires_at', new Date().toISOString());
+    .eq('user_id', user.id);
 
-  if ((count ?? 0) >= MAX_CONCURRENT) return json({ error: 'max_slots_reached' }, 409);
+  if ((count ?? 0) > 0) return json({ error: 'already_claimed' }, 409);
 
-  const expiresAt = new Date(Date.now() + TTL_HOURS * 3_600_000).toISOString();
   const { error } = await admin
     .from('bonus_slots')
-    .insert({ user_id: user.id, source: 'rewarded_ad', expires_at: expiresAt });
-  if (error) return json({ error: error.message }, 500);
+    .insert({ user_id: user.id, source: 'rewarded_ad' });
 
-  return json({ granted: 1, expiresAt });
+  if (error) {
+    // 23505 = unique_violation: two requests raced and the other one won. The
+    // user still ends up with exactly one slot, so report it as already claimed
+    // rather than as a failure.
+    if (error.code === '23505') return json({ error: 'already_claimed' }, 409);
+    return json({ error: error.message }, 500);
+  }
+
+  return json({ granted: 1, permanent: true });
 });
 
 function json(body: unknown, status = 200) {

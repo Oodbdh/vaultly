@@ -195,14 +195,13 @@
   },
   "quota": {
     "banner": "{{used}} of {{limit}} items used",
-    "limitTitle": "You've reached 4 items",
-    "limitBody": "Free vaults hold 4 items. Go Premium for unlimited, or watch a short ad for one extra slot.",
-    "watchAd": "Watch ad for +1 slot",
+    "limitTitle": "You've reached your {{limit}}-item limit",
+    "limitBody": "Free vaults hold 4 items. Watch one ad to permanently unlock one extra receipt slot, or go Premium for unlimited.",
+    "watchAd": "Watch one ad for +1 permanent slot",
     "watchAdLoading": "Loading ad…",
-    "bonusGranted": "One extra slot unlocked for 24 hours.",
-    "bonusActive": "+{{count}} bonus slot expires {{time}}",
-    "bonusMaxed": "You've claimed the maximum bonus slots. Go Premium for unlimited.",
-    "adUnavailable": "No ad available right now. Try again in a moment."
+    "bonusGranted": "Extra slot unlocked permanently.",
+    "adUnavailable": "No ad available right now. Try again in a moment.",
+    "limitBodyFinal": "You've used all {{limit}} free slots. Go Premium for unlimited items."
   },
   "paywall": {
     "title": "Vaultly Premium",
@@ -247,8 +246,10 @@
     "premiumActiveTitle": "Premium active",
     "premiumActiveBody": "Renews {{date}}",
     "freeSlotsTitle": "Need one more slot?",
-    "freeSlotsBody": "Watch a short video to unlock an extra item slot for 24 hours.",
-    "slotsUsed": "{{used}} of {{limit}} slots used"
+    "freeSlotsBody": "Watch one ad to permanently unlock one extra receipt slot.",
+    "slotsUsed": "{{used}} of {{limit}} slots used",
+    "freeSlotsClaimedTitle": "Extra slot unlocked",
+    "freeSlotsClaimedBody": "You have {{limit}} permanent slots. Go Premium for unlimited items."
   },
   "notifications": {
     "warrantyTitle": "Warranty ending soon",

@@ -8,6 +8,7 @@ import { colors, radius, spacing, typeScale } from '@/theme';
 import { useDirection } from '@/i18n/rtl';
 import { restoreAlert, usePaywall } from '@/hooks/usePaywall';
 import { usePremium } from '@/hooks/usePremium';
+import { useItemQuota } from '@/hooks/useItemQuota';
 
 const BENEFITS = [
   'paywall.benefitUnlimited',
@@ -23,6 +24,26 @@ export default function Paywall() {
   const router = useRouter();
   const { isPremium } = usePremium();
   const { priceLabel, isLoading, busy, purchase, restore } = usePaywall();
+  const quota = useItemQuota();
+
+  /**
+   * The add flow routes here as soon as the free limit is hit. While the
+   * one-off rewarded slot is still unclaimed, that moment is the ad
+   * opportunity — not a Premium wall. Once it is claimed this block disappears
+   * for good and the screen is Premium-only, which is the rule from the 6th
+   * item onward.
+   */
+  const showRewardedOffer = !isPremium && quota.canWatchAd;
+
+  async function watchAd() {
+    const result = await quota.watchAdForSlot();
+    if (result === 'granted') {
+      Alert.alert(t('quota.bonusGranted'));
+      router.back();
+    } else if (result === 'unavailable') {
+      Alert.alert(t('quota.adUnavailable'));
+    }
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -58,6 +79,32 @@ export default function Paywall() {
             </View>
           ))}
         </View>
+
+        {showRewardedOffer ? (
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: radius.lg,
+              padding: spacing.lg,
+              gap: spacing.md,
+            }}
+          >
+            <Text style={[type.body, { color: colors.text, fontWeight: '600', textAlign }]}>
+              {t('settings.freeSlotsTitle')}
+            </Text>
+            <Text style={[type.caption, { color: colors.textMuted, textAlign }]}>
+              {t('settings.freeSlotsBody')}
+            </Text>
+            <Button
+              variant="secondary"
+              disabled={quota.adLoading}
+              label={quota.adLoading ? t('quota.watchAdLoading') : t('quota.watchAd')}
+              onPress={() => void watchAd()}
+            />
+          </View>
+        ) : null}
 
         <View style={{ flex: 1 }} />
 

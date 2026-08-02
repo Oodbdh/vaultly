@@ -17,8 +17,10 @@ export type QuotaGate =
 
 /**
  * Monetization enforcement, client side:
- *   premium            → unlimited, never any ad
- *   free               → 4 items + up to 2 rewarded-ad slots (24h each)
+ *   premium → unlimited, never any ad
+ *   free    → 4 permanent items, plus one permanent 5th unlocked by watching a
+ *             single rewarded ad. That reward is once per account and never
+ *             expires; beyond 5 the only route is Premium.
  * The DB trigger enforces the same rule; this hook exists so the UI can react
  * before the user fills in a form.
  */
@@ -37,16 +39,26 @@ export function useItemQuota() {
 
   const used = data?.used ?? 0;
   const allowance = isPremium ? Infinity : data?.allowance ?? MONETIZATION.freeItemLimit;
-  const bonusActive = Math.max(0, allowance - MONETIZATION.freeItemLimit);
+  /** 0 before the reward is claimed, 1 after — it never goes back down. */
+  const bonusUnlocked = isPremium
+    ? 0
+    : Math.max(0, Math.min(allowance - MONETIZATION.freeItemLimit, MONETIZATION.rewardedSlotsPerAccount));
   const remaining = isPremium ? Infinity : Math.max(0, allowance - used);
+
+  /**
+   * The ad is offered only while the one-off reward is unclaimed. Once claimed,
+   * this is false forever, so the 6th item can only ever lead to the paywall.
+   */
+  const canWatchAd = !isPremium && bonusUnlocked < MONETIZATION.rewardedSlotsPerAccount;
 
   const gate: QuotaGate = isPremium || remaining > 0
     ? { allowed: true }
-    : { allowed: false, reason: 'limit', canWatchAd: bonusActive < MONETIZATION.maxConcurrentBonusSlots };
+    : { allowed: false, reason: 'limit', canWatchAd };
 
-  /** Watch a rewarded ad → server mints the slot → quota refetches. */
+  /** Watch the rewarded ad → server mints the permanent slot → quota refetches. */
   const watchAdForSlot = useCallback(async (): Promise<'granted' | 'dismissed' | 'unavailable'> => {
     if (isPremium) return 'unavailable'; // premium is ad-free, period
+    if (!canWatchAd) return 'unavailable'; // reward already claimed — never offer a second
     setAdLoading(true);
     try {
       await initAds();
@@ -74,7 +86,7 @@ export function useItemQuota() {
     } finally {
       setAdLoading(false);
     }
-  }, [isPremium, qc, user]);
+  }, [isPremium, canWatchAd, qc, user]);
 
   const openPaywall = useCallback(() => router.push('/paywall'), [router]);
 
@@ -84,7 +96,9 @@ export function useItemQuota() {
     used,
     limit: isPremium ? Infinity : allowance,
     remaining,
-    bonusActive,
+    /** 0 or 1 — whether the one-off permanent slot has been unlocked. */
+    bonusUnlocked,
+    canWatchAd,
     gate,
     adLoading,
     watchAdForSlot,

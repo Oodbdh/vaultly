@@ -195,14 +195,13 @@
   },
   "quota": {
     "banner": "{{used}} von {{limit}} Einträgen belegt",
-    "limitTitle": "Du hast 4 Einträge erreicht",
-    "limitBody": "Kostenlose Tresore fassen 4 Einträge. Hol dir Premium für unbegrenzt viele, oder sieh ein kurzes Video für einen Extraplatz.",
-    "watchAd": "Video ansehen für +1 Platz",
+    "limitTitle": "Du hast dein Limit von {{limit}} Einträgen erreicht",
+    "limitBody": "Kostenlose Tresore fassen 4 Einträge. Sieh dir eine Anzeige an, um dauerhaft einen zusätzlichen Belegplatz freizuschalten, oder hol dir Premium für unbegrenzte Einträge.",
+    "watchAd": "Eine Anzeige für +1 dauerhaften Platz",
     "watchAdLoading": "Werbung wird geladen…",
-    "bonusGranted": "Ein Extraplatz für 24 Stunden freigeschaltet.",
-    "bonusActive": "+{{count}} Extraplatz endet {{time}}",
-    "bonusMaxed": "Du hast alle Extraplätze genutzt. Hol dir Premium für unbegrenzt viele.",
-    "adUnavailable": "Gerade keine Werbung verfügbar. Versuche es später."
+    "bonusGranted": "Zusätzlicher Platz dauerhaft freigeschaltet.",
+    "adUnavailable": "Gerade keine Werbung verfügbar. Versuche es später.",
+    "limitBodyFinal": "Du hast alle {{limit}} kostenlosen Plätze genutzt. Hol dir Premium für unbegrenzte Einträge."
   },
   "paywall": {
     "title": "Vaultly Premium",
@@ -247,8 +246,10 @@
     "premiumActiveTitle": "Premium aktiv",
     "premiumActiveBody": "Verlängert am {{date}}",
     "freeSlotsTitle": "Noch einen Platz nötig?",
-    "freeSlotsBody": "Sieh ein kurzes Video und schalte 24 Stunden lang einen Extraplatz frei.",
-    "slotsUsed": "{{used}} von {{limit}} Plätzen belegt"
+    "freeSlotsBody": "Sieh dir eine Anzeige an, um dauerhaft einen zusätzlichen Belegplatz freizuschalten.",
+    "slotsUsed": "{{used}} von {{limit}} Plätzen belegt",
+    "freeSlotsClaimedTitle": "Zusätzlicher Platz freigeschaltet",
+    "freeSlotsClaimedBody": "Du hast {{limit}} dauerhafte Plätze. Hol dir Premium für unbegrenzte Einträge."
   },
   "notifications": {
     "warrantyTitle": "Garantie endet bald",

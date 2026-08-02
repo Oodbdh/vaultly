@@ -37,6 +37,7 @@ let db: MockTables = buildSeed();
  * paywall all reachable in sequence.
  */
 let quotaUsed = 3;
+/** 0 or 1 — the one-off permanent rewarded slot. Never expires, never resets. */
 let bonusSlots = 0;
 
 /** Enough latency for skeletons and pull-to-refresh to actually be visible. */
@@ -256,10 +257,14 @@ export function mockDeleteItem(id: string): Promise<void> {
   return settle(undefined);
 }
 
-/** Stands in for the rewarded-ad Edge Function: mints one 24h bonus slot. */
+/**
+ * Stands in for the rewarded-ad Edge Function: mints the one permanent bonus
+ * slot. Mirrors `bonus_slots_user_once` — a second call always reports
+ * 'unavailable', so the mock cannot demonstrate a behaviour the server forbids.
+ */
 export function mockGrantBonusSlot(): Promise<'granted' | 'unavailable'> {
-  if (bonusSlots >= MONETIZATION.maxConcurrentBonusSlots) return settle('unavailable' as const);
-  bonusSlots += MONETIZATION.bonusSlotsPerAd;
+  if (bonusSlots >= MONETIZATION.rewardedSlotsPerAccount) return settle('unavailable' as const);
+  bonusSlots = MONETIZATION.rewardedSlotsPerAccount;
   return settle('granted' as const);
 }
 

@@ -195,14 +195,13 @@
   },
   "quota": {
     "banner": "{{used}} de {{limit}} elementos usados",
-    "limitTitle": "Has llegado a 4 elementos",
-    "limitBody": "Las cajas gratuitas guardan 4 elementos. Pásate a Premium para ilimitados, o mira un anuncio corto para una plaza extra.",
-    "watchAd": "Ver anuncio por +1 plaza",
+    "limitTitle": "Has alcanzado tu límite de {{limit}} artículos",
+    "limitBody": "Las bóvedas gratuitas admiten 4 artículos. Mira un anuncio para desbloquear permanentemente una ranura de recibo adicional, o hazte Premium para tener ilimitados.",
+    "watchAd": "Mira un anuncio para +1 ranura permanente",
     "watchAdLoading": "Cargando anuncio…",
-    "bonusGranted": "Plaza extra desbloqueada por 24 horas.",
-    "bonusActive": "+{{count}} plaza extra vence {{time}}",
-    "bonusMaxed": "Ya has usado el máximo de plazas extra. Pásate a Premium para ilimitados.",
-    "adUnavailable": "No hay anuncios ahora mismo. Prueba en un momento."
+    "bonusGranted": "Ranura adicional desbloqueada permanentemente.",
+    "adUnavailable": "No hay anuncios ahora mismo. Prueba en un momento.",
+    "limitBodyFinal": "Has usado las {{limit}} ranuras gratuitas. Hazte Premium para artículos ilimitados."
   },
   "paywall": {
     "title": "Vaultly Premium",
@@ -246,9 +245,11 @@
     "premiumBannerCta": "Mejorar",
     "premiumActiveTitle": "Premium activo",
     "premiumActiveBody": "Se renueva el {{date}}",
-    "freeSlotsTitle": "¿Necesitas una plaza más?",
-    "freeSlotsBody": "Mira un vídeo corto para desbloquear una plaza extra durante 24 horas.",
-    "slotsUsed": "{{used}} de {{limit}} plazas usadas"
+    "freeSlotsTitle": "¿Necesitas una ranura más?",
+    "freeSlotsBody": "Mira un anuncio para desbloquear permanentemente una ranura de recibo adicional.",
+    "slotsUsed": "{{used}} de {{limit}} plazas usadas",
+    "freeSlotsClaimedTitle": "Ranura adicional desbloqueada",
+    "freeSlotsClaimedBody": "Tienes {{limit}} ranuras permanentes. Hazte Premium para artículos ilimitados."
   },
   "notifications": {
     "warrantyTitle": "La garantía termina pronto",

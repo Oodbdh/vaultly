@@ -17,6 +17,23 @@
 > - §7 auth providers have changed: Google is now **enabled**.
 > - §19–§22 predate a large body of work; see HANDOVER.md §16 and §20.
 >
+> **Current as of 2026-08-02** (these sections were rewritten, not inherited):
+> §1 monetization, **§8a free storage model**, §8 `bonus_slots`, §9 Edge
+> Functions, §14 AdMob, §4 folder listing.
+>
+> **Resolved since this file was first written:**
+> - Android launch crash — **fixed and verified on device** (HANDOVER §14).
+> - Google Sign-In — **fixed and working**. `authRedirect.ts` was emitting
+>   `vaultly:///auth-callback` (three slashes) because `createURL` was given a
+>   leading-slash path; that value matched neither the Supabase allow-list nor
+>   the `returnUrl` that `openAuthSessionAsync` compares against, so the browser
+>   resolved `dismiss` and the code was silently dropped.
+>
+> **Open and actively being traced:** the email-change flow. `/verify` returns
+> `?message=` rather than `?code=`, so `exchangeCodeForSession` is never called
+> and `new_email` stays pending server-side. Blocked on a Supabase email rate
+> limit — see the end of §21 for exactly what to check next.
+>
 > The architecture, design rationale, RTL/plural rules and historical bug
 > post-mortems below remain accurate and are still worth reading.
 
@@ -50,8 +67,10 @@ reminders.
 - **Languages:** English, Arabic (full RTL), Spanish, French, German.
 - **Primary market:** Saudi Arabia — SAR default currency, Hijri→Gregorian date
   conversion in the OCR prompt, Arabic as a first-class RTL locale.
-- **Monetization:** free tier of 4 items, +1 slot per rewarded ad (24h, max 2),
-  Premium at SAR 10/month for unlimited and ad-free.
+- **Monetization:** free tier of **4 permanent items**, plus **one permanent 5th
+  slot** unlocked by watching a single rewarded ad — **once per account, never
+  expires**. From the 6th item onward the only route is Premium at SAR 10/month
+  for unlimited and ad-free. See §8a.
 
 **Where the code lives:**
 `C:\Users\عدي\OneDrive\سطح المكتب\تطبيق 1\Vaultly Digital Vault Setup\vaultly`
@@ -143,8 +162,11 @@ vaultly/
 ├── supabase/
 │   ├── setup.sql               ★ full schema, idempotent, APPLIED
 │   ├── migrations/0001_init.sql, 0002_storage.sql, 0003_rpc_grants.sql
+│   ├── migrations/0004_profile_prefs.sql        NOT applied
+│   ├── migrations/0005_permanent_bonus_slot.sql APPLIED 2026-08-02 (§8a)
 │   ├── functions/analyze-receipt/     DEPLOYED
-│   ├── functions/grant-bonus-slot/    NOT deployed
+│   ├── functions/delete-account/      DEPLOYED
+│   ├── functions/grant-bonus-slot/    DEPLOYED
 │   └── functions/revenuecat-webhook/  NOT deployed
 ├── app/                        (21 route files — see §16)
 └── src/                        (67 files — see §3)
@@ -258,13 +280,13 @@ objects live. `setup.sql` is **idempotent** — safe to re-run.
 | `vault_items` | the vault; one row per receipt/warranty/subscription | `kind` (enum), `merchant_name`, `total_amount`, `currency`, `purchase_date`, `category`, `image_path`, `ocr_status`, `ocr_raw`, `ocr_confidence` |
 | `warranties` | 1:1 with an item | `item_id`, `expires_on` (date, NOT NULL), `duration_months`, `reminder_days` `{30,7,1}` |
 | `subscriptions` | 1:1 with an item | `name`, `amount`, `period` (enum), `next_renewal` (date, NOT NULL), `auto_renews`, `reminder_days` `{3,1}` |
-| `bonus_slots` | rewarded-ad grants, server-minted | `source`, `granted_at`, `expires_at` |
+| `bonus_slots` | the one-off rewarded grant, server-minted | `source`, `granted_at`, **unique(`user_id`)** — no expiry column |
 
 **Enums:** `item_kind`, `billing_period`, `plan_tier`, `ocr_status`.
 
 **Indexes:** `vault_items(user_id, created_at desc)`, `vault_items(user_id, kind)`,
 `warranties(user_id, expires_on)`, `subscriptions(user_id, next_renewal)`,
-`bonus_slots(user_id, expires_at desc)`.
+`bonus_slots` needs no extra index — the unique constraint on `user_id` provides one.
 
 **Functions:** `touch_updated_at`, `handle_new_user`, `is_premium(uuid)`,
 `item_allowance(uuid)`, `enforce_item_quota`.
@@ -295,12 +317,71 @@ is why `services/receipts.ts` casts the embedded join through `unknown`. Running
 
 ---
 
+## 8a. Free storage model — permanent one-time reward
+
+**Applied to the live database 2026-08-02** via
+`supabase/migrations/0005_permanent_bonus_slot.sql`. This **replaced** the
+previous model (up to 2 concurrent rewarded slots, each expiring after 24 hours).
+No part of the 24-hour model survives anywhere in the project.
+
+**The rule:**
+
+| State | Slots | Ad offered? |
+|---|---|---|
+| Free, reward unclaimed | 4 | **Yes — once** |
+| Free, reward claimed | **5, permanently** | **Never again** |
+| 6th item onward | — | Paywall only |
+| Premium | unlimited | Never (ad-free by construction) |
+
+**Where it is enforced — three independent layers, deliberately:**
+
+1. **`bonus_slots_user_once`**, a `unique (user_id)` constraint. This is the real
+   guarantee behind "once per account". Even if the Edge Function were called
+   twice, or two calls raced, the second insert fails.
+2. **`item_allowance(uid)`** = `4 + least(count(bonus_slots where user_id), 1)`.
+   The `least(…, 1)` caps a free user at 5 regardless of table contents, and
+   there is **no time component** — the slot cannot lapse.
+3. **`enforce_item_quota`** (BEFORE INSERT trigger) remains the authority on
+   writes, unchanged; it simply reads the new allowance.
+
+`grant-bonus-slot` rejects a second claim with `already_claimed` (409) and maps
+Postgres `23505` to the same response, so a race reports honestly rather than
+as a server error.
+
+**Client mirror** (`src/constants/config.ts`): `freeItemLimit: 4`,
+`rewardedSlotsPerAccount: 1`, derived `FREE_MAX_SLOTS = 5`. `useItemQuota`
+exposes `bonusUnlocked` (0 or 1) and `canWatchAd`; `watchAdForSlot()` refuses
+outright once claimed. Removed: `bonusSlotTtlHours`, `maxConcurrentBonusSlots`,
+`bonusSlotsPerAd`.
+
+**UI:** the ad is offered on Home's `QuotaBanner`, Profile's `RewardedSlotCard`,
+**and on the paywall itself** — the add flow routes to `/paywall` the moment the
+limit is hit, so without that the reward would have been unreachable from the
+main path. Once claimed, every one of those affordances disappears permanently.
+Copy in all five locales says "permanently"; `quota.bonusActive` and
+`quota.bonusMaxed` were deleted outright.
+
+**Verified live, 2026-08-02** (in a rolled-back transaction against a real user,
+leaving no residue): allowance 4 → 5 after one grant; second grant blocked by the
+unique constraint; allowance still 5; 5 items accepted; 6th rejected with
+`VAULTLY_QUOTA_EXCEEDED`; `expires_at` gone; `item_allowance` contains no
+time logic.
+
+⚠️ **The ad itself cannot run yet.** `react-native-google-mobile-ads` was removed
+to fix the Android launch crash (HANDOVER §14) and has deliberately **not** been
+re-added. `showRewardedAd()` therefore returns `unavailable` in live mode, so the
+grant path is currently unreachable from the UI even though the server side is
+live and correct. Re-adding AdMob is what activates it.
+
+---
+
 ## 9. Edge Functions
 
 | Function | Status | verify_jwt |
 |---|---|---|
-| `analyze-receipt` | **ACTIVE**, version 1 | `true` |
-| `grant-bonus-slot` | in repo, **not deployed** | — |
+| `analyze-receipt` | **ACTIVE**, version 3 | `true` |
+| `delete-account` | **ACTIVE**, version 1 | `true` |
+| `grant-bonus-slot` | **ACTIVE**, version 1 (deployed 2026-08-02) | `true` |
 | `revenuecat-webhook` | in repo, **not deployed** | — |
 
 Deploy with `npm run fn:deploy` (which passes `--use-api`; **Docker is not
@@ -440,25 +521,35 @@ with Apple configuration. Neither has been started.
 
 ## 14. AdMob status
 
-**Code: complete. Configuration: not started. Never executed.**
+**Package removed. Code retained and dormant. Never executed.**
 
-`src/services/ads.ts` lazily requires `react-native-google-mobile-ads`. When the
-module is missing (Expo Go) **and** mock mode is on, `showRewardedAd()`
-simulates an earned reward after 1.2s so the rewarded-slot flow can be walked;
-otherwise it reports `unavailable`.
+⚠️ `react-native-google-mobile-ads` is **not installed** — it was removed to fix
+the Android launch crash (HANDOVER §14: it autolinked a native SDK with a blank
+`APPLICATION_ID`, which threw from `MobileAdsInitProvider` before React Native
+started). Re-adding it is a deliberate later step; **do not re-add it without
+real app IDs.**
+
+Consequence for the reward model (§8a): the server side is live and correct, but
+`showRewardedAd()` returns `unavailable` in live mode, so the grant path cannot
+currently be reached from the UI. In **mock mode** it still simulates an earned
+reward after 1.2s, which is the only way to walk the flow today.
+
+`src/services/ads.ts` lazily requires the module and degrades on its own, so
+nothing else needs to change when it comes back — except reverting the
+structural `AdsModule` type to `typeof import('react-native-google-mobile-ads')`.
 
 `initAds()` sets `maxAdContentRating: PG` and requests
 `requestNonPersonalizedAdsOnly`. `usePremium().showAds` is the single ad gate —
 premium is ad-free by construction.
 
-**The AdMob config plugin is conditionally omitted from `app.config.ts`** when
-the app IDs are blank, because it refuses to prebuild with empty values. It
-rejoins the build automatically once both IDs are set.
+**The AdMob config plugin block was deleted from `app.config.ts`** along with the
+package, together with both `config.googleMobileAdsAppId` entries. HANDOVER §11
+lists the exact steps to restore them.
 
-Rewarded ads mint bonus slots only via `grant-bonus-slot` (service role) after
-the SDK fires `EARNED_REWARD` — clients cannot insert into `bonus_slots` (RLS).
-**That function is not deployed**, so even with AdMob configured the grant would
-fail until it is.
+The rewarded grant is minted only by `grant-bonus-slot` (service role) after the
+SDK fires `EARNED_REWARD` — clients cannot insert into `bonus_slots` (RLS).
+**That function is now DEPLOYED and verified**, so the moment AdMob returns the
+grant path works end to end with no further server work.
 
 ---
 
@@ -626,7 +717,8 @@ mislabelled-chip bug; keep them sharing.
 
 8. RevenueCat: store products, entitlement `premium_access`, keys, deploy
    `revenuecat-webhook` + secret (§11).
-9. AdMob: app IDs + rewarded unit IDs, deploy `grant-bonus-slot` (§14).
+9. AdMob: re-add `react-native-google-mobile-ads` with **real** app IDs + rewarded
+   unit IDs. `grant-bonus-slot` is already deployed and verified (§8a, §14).
 10. `eas init` → `EAS_PROJECT_ID`; build a dev client. Neither RevenueCat nor
     AdMob nor push can be tested in Expo Go.
 
@@ -654,6 +746,41 @@ mislabelled-chip bug; keep them sharing.
 | Push notifications absent in Expo Go | Low | Expected since SDK 53; handled |
 | Expo warns TypeScript ~5.3.3 expected | Cosmetic | **Ignore.** Reverting reintroduces a real bug (§24) |
 | OneDrive sync races | Annoyance | Files can change mid-edit |
+
+### Email change — open, traced, blocked on a rate limit
+
+**Symptom:** request an email change, click the link, app opens, address never
+updates. Server keeps `email = <old>` and `new_email = <pending>` indefinitely.
+
+**Established by instrumented device traces (2026-08-02):**
+
+| Step | Result |
+|---|---|
+| `updateUser({ email })` | ✅ works — `new_email` set, `redirectTo` correct |
+| `/verify` link | ⚠️ redirects to `vaultly://auth-callback?message=…` — **no `code`** |
+| `completeAuthFromUrl()` | ❌ returns `ignored`; also received a **stale** URL |
+| `refreshSession()` / `refreshUser()` | ✅ both fine — they correctly return the old address, because the server still holds it |
+
+**Root cause is at the `/verify` step, not in refresh.** The token is
+`pkce_…`, and in PKCE the account mutation only commits when the client calls
+`exchangeCodeForSession(code)`. No code is ever issued, so nothing can commit.
+*Secure email change is ruled out* — only one mail is sent, to the new address.
+
+**Next steps** (blocked: Supabase email rate limit reached):
+1. Dashboard → Auth → Providers → Email → check **"Secure email change"**. Not
+   exposed via the anon key — `/auth/v1/settings` does not return it.
+2. Dashboard → Auth → **Logs**, find the `/verify` request and read its outcome.
+3. Re-click a fresh link and capture the **value** of `?message=` — that string
+   decides the fix and was never captured.
+
+**Second, independently confirmed defect that will bite the moment a `code`
+*is* issued:** `app/auth-callback.tsx:28` reads the link via
+`Linking.useURL()`, which returned the **stale dev-client launch URL on every
+single mount** across two days of traces — it never once saw a real deep link.
+Google Sign-In survives this only because `sign-in.tsx` has an independent
+handler; the email path has no backup. Expect the real fix to be *both* a
+`message` branch in `completeAuthFromUrl` and sourcing the URL from expo-router
+route params instead of `Linking.useURL()`.
 
 **Fixed, recorded so they are not reintroduced:**
 
@@ -691,9 +818,10 @@ Ordered. Items 1–4 unblock everything else.
 [ ] 10. Set EXPO_PUBLIC_SUPPORT_EMAIL to a monitored inbox
 [ ] 11. eas init → EAS_PROJECT_ID; eas build --profile development
 [ ] 12. On the dev client: verify push tokens, RevenueCat, AdMob
-[ ] 13. Deploy grant-bonus-slot and revenuecat-webhook
+[x] 13. Deploy grant-bonus-slot            (done 2026-08-02)
+[ ] 13b. Deploy revenuecat-webhook
 [ ] 14. RevenueCat products + entitlement premium_access + keys
-[ ] 15. AdMob app IDs + rewarded unit IDs
+[ ] 15. Re-add react-native-google-mobile-ads + AdMob app IDs + rewarded unit IDs
 [ ] 16. Enable Google/Apple providers, or remove the buttons
 [ ] 17. Persist the Settings notification toggles to profiles
 [ ] 18. Subscription edit flow
@@ -850,7 +978,8 @@ Note the entry path — this is an expo-router project, so `/index.bundle` 404s.
 | Notifications (local) | ⚠️ Implemented | Not observed firing |
 | Notifications (push) | ❌ Blocked | Needs EAS_PROJECT_ID + dev build |
 | RevenueCat | ❌ Not configured | Store products, keys, webhook |
-| AdMob | ❌ Not configured | App IDs, `grant-bonus-slot` |
+| Free storage model (§8a) | ✅ Live & verified | Ad itself blocked on AdMob |
+| AdMob | ❌ Package removed | Re-add pkg + real app IDs; server side is done |
 | Legal content | ⚠️ Drafted | Placeholder + needs review |
 | Assets | ⚠️ Placeholder icon | — |
 | Version control | ❌ **None** | `git init` |

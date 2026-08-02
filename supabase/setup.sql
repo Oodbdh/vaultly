@@ -119,16 +119,17 @@ create index if not exists subscriptions_renewal_idx
   on public.subscriptions (user_id, next_renewal);
 
 -- ── bonus_slots (rewarded-ad grants) ────────────────────────────────────────
+-- One permanent slot per account, claimed by watching a single rewarded ad.
+-- There is deliberately no expiry column: the slot never lapses, and the unique
+-- constraint is what makes "the ad can only be used once" true at the database
+-- level rather than only in the Edge Function.
 create table if not exists public.bonus_slots (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users (id) on delete cascade,
   source      text not null default 'rewarded_ad',
   granted_at  timestamptz not null default now(),
-  expires_at  timestamptz not null
+  constraint bonus_slots_user_once unique (user_id)
 );
-
-create index if not exists bonus_slots_active_idx
-  on public.bonus_slots (user_id, expires_at desc);
 
 -- ── updated_at triggers ─────────────────────────────────────────────────────
 create or replace function public.touch_updated_at()
@@ -180,9 +181,8 @@ returns int language sql stable security definer set search_path = public as $$
   select case
     when public.is_premium(uid) then 2147483647
     else 4 + least(
-      (select count(*)::int from public.bonus_slots
-        where user_id = uid and expires_at > now()),
-      2 -- max 2 concurrent rewarded-ad slots
+      (select count(*)::int from public.bonus_slots where user_id = uid),
+      1 -- exactly one permanent rewarded slot, ever
     )
   end;
 $$;

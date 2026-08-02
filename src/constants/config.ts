@@ -72,20 +72,28 @@ if (__DEV__ && USE_MOCK_DATA) {
   console.log('[vaultly] Mock backend active — see src/mocks. Add Supabase keys to .env to go live.');
 }
 
-/** Monetization rules — single source of truth on the client. */
+/**
+ * Monetization rules — single source of truth on the client.
+ *
+ * Free tier: 4 permanent slots. Watching one rewarded ad permanently unlocks a
+ * 5th. That reward is available once per account and never expires; past 5
+ * items the only route is Premium. `item_allowance()` in Postgres encodes the
+ * same rule and is the authority — these constants exist so the UI can react
+ * before the insert is attempted.
+ */
 export const MONETIZATION = {
   entitlementId: 'premium_access',
   /** RevenueCat offering that holds the 10 SAR/month package. */
   defaultOfferingId: 'default',
   monthlyPriceFallback: 'SAR 10',
   freeItemLimit: 4,
-  /** Each completed rewarded ad grants one slot… */
-  bonusSlotsPerAd: 1,
-  /** …for this long… */
-  bonusSlotTtlHours: 24,
-  /** …and at most this many can be active at once. */
-  maxConcurrentBonusSlots: 2,
+  /** The single permanent slot a rewarded ad unlocks, once per account. */
+  rewardedSlotsPerAccount: 1,
 } as const;
+
+/** Free ceiling once the one-off rewarded slot has been claimed. */
+export const FREE_MAX_SLOTS =
+  MONETIZATION.freeItemLimit + MONETIZATION.rewardedSlotsPerAccount;
 
 /**
  * Where Help & Support sends mail. Overridable per build without touching code;

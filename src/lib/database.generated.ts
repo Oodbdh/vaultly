@@ -16,21 +16,18 @@ export type Database = {
     Tables: {
       bonus_slots: {
         Row: {
-          expires_at: string
           granted_at: string
           id: string
           source: string
           user_id: string
         }
         Insert: {
-          expires_at: string
           granted_at?: string
           id?: string
           source?: string
           user_id: string
         }
         Update: {
-          expires_at?: string
           granted_at?: string
           id?: string
           source?: string

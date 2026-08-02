@@ -195,14 +195,13 @@
   },
   "quota": {
     "banner": "{{used}} élément(s) sur {{limit}} utilisés",
-    "limitTitle": "Vous avez atteint 4 éléments",
-    "limitBody": "Les coffres gratuits contiennent 4 éléments. Passez à Premium pour un accès illimité, ou regardez une courte publicité pour une place supplémentaire.",
-    "watchAd": "Voir une pub pour +1 place",
+    "limitTitle": "Vous avez atteint votre limite de {{limit}} éléments",
+    "limitBody": "Les coffres gratuits contiennent 4 éléments. Regardez une publicité pour débloquer définitivement un emplacement de reçu supplémentaire, ou passez à Premium pour un nombre illimité.",
+    "watchAd": "Regarder une pub pour +1 emplacement permanent",
     "watchAdLoading": "Chargement de la publicité…",
-    "bonusGranted": "Une place supplémentaire débloquée pour 24 heures.",
-    "bonusActive": "+{{count}} place expire {{time}}",
-    "bonusMaxed": "Vous avez atteint le maximum de places bonus. Passez à Premium.",
-    "adUnavailable": "Aucune publicité disponible. Réessayez dans un instant."
+    "bonusGranted": "Emplacement supplémentaire débloqué définitivement.",
+    "adUnavailable": "Aucune publicité disponible. Réessayez dans un instant.",
+    "limitBodyFinal": "Vous avez utilisé vos {{limit}} emplacements gratuits. Passez à Premium pour des éléments illimités."
   },
   "paywall": {
     "title": "Vaultly Premium",
@@ -246,9 +245,11 @@
     "premiumBannerCta": "Passer",
     "premiumActiveTitle": "Premium actif",
     "premiumActiveBody": "Renouvellement le {{date}}",
-    "freeSlotsTitle": "Besoin d'une place de plus ?",
-    "freeSlotsBody": "Regardez une courte vidéo pour débloquer une place supplémentaire pendant 24 heures.",
-    "slotsUsed": "{{used}} places sur {{limit}} utilisées"
+    "freeSlotsTitle": "Besoin d'un emplacement de plus ?",
+    "freeSlotsBody": "Regardez une publicité pour débloquer définitivement un emplacement de reçu supplémentaire.",
+    "slotsUsed": "{{used}} places sur {{limit}} utilisées",
+    "freeSlotsClaimedTitle": "Emplacement supplémentaire débloqué",
+    "freeSlotsClaimedBody": "Vous avez {{limit}} emplacements permanents. Passez à Premium pour des éléments illimités."
   },
   "notifications": {
     "warrantyTitle": "Garantie bientôt terminée",

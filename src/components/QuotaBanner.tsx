@@ -37,7 +37,13 @@ export function QuotaBanner() {
 
       {atLimit ? (
         <>
-          <Text style={[type.body, { color: colors.text, textAlign }]}>{t('quota.limitBody')}</Text>
+          {/* Once the one-off slot is claimed the ad is never mentioned again —
+              at that point Premium is the only way past the limit. */}
+          <Text style={[type.body, { color: colors.text, textAlign }]}>
+            {quota.canWatchAd
+              ? t('quota.limitBody')
+              : t('quota.limitBodyFinal', { limit: quota.limit })}
+          </Text>
           <View style={{ flexDirection: 'row', gap: spacing.md }}>
             {quota.gate.allowed === false && quota.gate.canWatchAd ? (
               <Button
