@@ -19,13 +19,15 @@ warranties and subscriptions and warns you before something lapses.
 development (launch crash, Google Sign-In, email change) are **all fixed and
 verified on a real device**.
 
-**What is not done:** no Play Console listing, no store products, no real receipt
-has been through the new OCR pipeline, and the repo has never been pushed to a
-remote.
+The repo is **public at `github.com/Oodbdh/vaultly`** and the **privacy policy is
+live** at `https://oodbdh.github.io/vaultly/privacy.html` (§14).
+
+**What is not done:** no Play Console listing, no store products, and no real
+receipt has been through the new OCR pipeline.
 
 **Immediate next actions** — see §18 for the full ordered list:
-1. Push to GitHub and publish the privacy policy (blocked on your auth).
-2. Scan one real receipt to exercise the new pipeline (§8).
+1. Scan one real receipt to exercise the new pipeline (§8).
+2. Get the privacy policy reviewed by a lawyer, then create the Play listing.
 
 **Verification gates, re-run 2026-08-03 after applying `0004`:**
 
@@ -108,18 +110,16 @@ Note the entry path — this is expo-router; `/index.bundle` 404s.
 - Branch **`main`**, working tree **clean**. `git log --oneline | wc -l` is the
   authority on the count — the list below is only as current as the commit that
   last edited this file, and cannot include that commit itself.
-- Remote `origin` is configured but **nothing has ever been pushed**:
-  `https://github.com/Oodbdh/C-Users-OneDrive-1-Vaultly-Digital-Vault-Setup-vaultly-docs-privacy.html.git`
-- Push is blocked: `gh` is not installed and Git Credential Manager cannot prompt
-  non-interactively. The user must run `git push -u origin main` in their own
-  terminal once, after which cached credentials make further pushes work.
-- **Never `--force`.** The remote's contents are unknown; a read-only
-  `git ls-remote` was refused, which means the repo is private or does not exist
-  (GitHub returns the same challenge for both).
-
-⚠️ **The repo name is a problem.** It is auto-generated from a file path and will
-appear publicly in the Play listing as the privacy-policy URL. Rename it to
-`vaultly` before publishing.
+- Remote `origin` is **`https://github.com/Oodbdh/vaultly.git`** — renamed from
+  the old path-derived name, and **public** since 2026-08-03.
+- **Push works from automation now.** Git Credential Manager has a cached token,
+  so `git push origin main` succeeds non-interactively. `gh` is still not
+  installed, and there is no token in the environment — so anything needing the
+  **GitHub API** (repo settings, Pages settings, `workflow_dispatch`) still has
+  to be done by the user in the web UI. Do not try to work around that by
+  reading the token out of Credential Manager.
+- **Never `--force`.** The remote is now the published source of the privacy
+  policy Google Play points at.
 
 **Secret audit (done 2026-08-03):** `.env` is untracked; `.env.example` holds only
 placeholders; every credential-shaped match in tracked files is a variable *name*
@@ -618,10 +618,39 @@ by dependency scan), sub-processors are exactly Supabase/OpenAI/RevenueCat/Googl
 Play/Expo/Google Sign-In, the security section describes real mechanisms, and the
 deletion section matches what `delete-account` actually does.
 
-**Not published.** Blocked on the git push. Five placeholders must be filled
-before publishing: legal entity name (×2), registered address (×2), minimum age.
-They match the `LEGAL_ENTITY` placeholder in `src/content/support.ts`.
-**It needs review by a qualified lawyer.**
+### Published — this is the URL Google Play gets
+
+```
+https://oodbdh.github.io/vaultly/privacy.html
+```
+
+Verified live 2026-08-03: **HTTP 200**, `text/html; charset=utf-8`, operator name
+and address each present twice, **zero** placeholders remaining.
+
+⚠️ **Pages is served from the branch, not from the workflow.** Source is
+*Deploy from a branch → `main` → `/docs`*. `.github/workflows/pages.yml` has
+**never run** — the repo reports `total_count: 0` for Actions, so Actions is
+disabled at the repo or account level. The workflow is therefore **dormant and
+not the publishing mechanism**: `actions/deploy-pages` only works when the Pages
+source is set to GitHub Actions, so if Actions is ever switched on, that workflow
+will start failing against a branch-source site. Either delete it or switch the
+Pages source — do not leave both half-configured.
+
+Publishing is now just `git push`: the branch source redeploys automatically,
+taking ~30–60s to serve new content.
+
+All five placeholders are filled. Operator is an **individual, not a company** —
+`LEGAL_ENTITY` in `src/content/support.ts` is a personal legal name, used
+verbatim in both the en and ar documents; an Arabic form would have to come from
+the operator. Minimum age is **13**, taken from the Terms in the same file.
+
+⚠️ Two things still open: **it needs review by a qualified lawyer**, and if EU
+distribution is intended, GDPR Art. 8 puts digital consent at 16 unless a member
+state lowers it — the policy and the Terms must move together if 13 changes.
+
+⚠️ The site **root** (`/vaultly/`) is a 404; `docs/` has no `index.html`. Only
+the deep link is published. Harmless for Play, which takes the exact URL, but a
+reviewer who trims the path sees a 404.
 
 ---
 
@@ -744,27 +773,26 @@ result; Delete Account having no `onPress`.
 
 ## 18. Next priorities, in order
 
-1. **Push to GitHub** — `git push -u origin main` from your own terminal
-   (auth blocked for automation). Rename the repo to `vaultly` first; the current
-   name becomes a public URL in Play Console.
-2. **Enable GitHub Pages** — Settings → Pages → Source: GitHub Actions. Then the
-   policy URL is `https://oodbdh.github.io/<repo>/privacy.html`. Verify it returns
-   200 before pasting into Play Console. Private repos need a paid plan for Pages.
-3. **Scan one real receipt** — the five-stage pipeline has never processed a photo.
+1. **Scan one real receipt** — the five-stage pipeline has never processed a photo.
    Highest-value untested path.
-4. **Fill the privacy-policy placeholders** and get legal review.
-5. **Play Console:** create the app, complete the Data safety form (it must match
+2. **Get the privacy policy reviewed by a lawyer.** It is published and complete,
+   but no qualified person has read it (§14).
+3. **Play Console:** create the app, complete the Data safety form (it must match
    the privacy policy — "no analytics, no ads" is currently true), upload the AAB.
-6. **Create the SAR 10/month subscription** in Play Console and map it to offering
+   Policy URL: `https://oodbdh.github.io/vaultly/privacy.html`.
+4. **Create the SAR 10/month subscription** in Play Console and map it to offering
    `default` / entitlement `premium_access` in RevenueCat. Add the webhook URL and
    secret in the RevenueCat dashboard. Then test a sandbox purchase and a restore.
-7. **Re-add AdMob** with real app IDs — and update the privacy policy in the same
+5. **Resolve the dormant Pages workflow** — delete `.github/workflows/pages.yml`,
+   or turn Actions on and switch the Pages source to it. Leaving both half-set is
+   how this silently breaks later (§14).
+6. **Re-add AdMob** with real app IDs — and update the privacy policy in the same
    change.
-8. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
+7. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
    Still the only way to exercise authenticated paths end to end.
-9. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
+8. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
 
-**Done since this list was written**, both on 2026-08-03:
+**Done since this list was written**, all on 2026-08-03:
 
 - `migrations/0004_profile_prefs.sql` applied to the linked project, types
   regenerated, and the two placeholders it required (`PendingProfileColumns`,
@@ -774,6 +802,8 @@ result; Delete Account having no `onPress`.
   requesting the Android bundle from Metro (HTTP 200) as well as `tsc`, since
   the suite has no component coverage.
 - The Settings reminder toggles wired end to end — see §15.
+- Repo renamed to `vaultly`, made public, and pushed. Privacy policy published
+  and verified at HTTP 200, with every placeholder filled — see §2 and §14.
 
 ---
 
