@@ -1,1102 +1,762 @@
-# Vaultly — Project State & Production Handoff
+# Vaultly — Project State
 
-> ⚠️ **SUPERSEDED IN PLACES — read `HANDOVER.md` first.**
->
-> `HANDOVER.md` was verified 2026-08-02 and is newer than this file. Where the
-> two disagree, **HANDOVER.md is correct**. Known drift in this document:
->
-> - §5 and §14 describe `react-native-google-mobile-ads` as an installed
->   dependency. **It has been removed** — with no app IDs configured it
->   autolinked a native SDK with a blank `APPLICATION_ID`, the diagnosed cause of
->   the Android launch crash and the EAS build failure. See HANDOVER.md §11/§14.
-> - §1 and §20 say the project is not a git repository and needs `git init`.
->   **It is a repo**, and all work is committed.
-> - §3 says `USE_MOCK_DATA` is read in exactly four places — it is now read in
->   eight.
-> - §5 predates `expo-sharing` and `expo-dev-client` being added.
-> - §7 auth providers have changed: Google is now **enabled**.
-> - §19–§22 predate a large body of work; see HANDOVER.md §16 and §20.
->
-> **Current as of 2026-08-02** (these sections were rewritten, not inherited):
-> §1 monetization, **§8a free storage model**, §8 `bonus_slots`, §9 Edge
-> Functions, §14 AdMob, §4 folder listing.
->
-> **Resolved since this file was first written:**
-> - Android launch crash — **fixed and verified on device** (HANDOVER §14).
-> - Google Sign-In — **fixed and working**. `authRedirect.ts` was emitting
->   `vaultly:///auth-callback` (three slashes) because `createURL` was given a
->   leading-slash path; that value matched neither the Supabase allow-list nor
->   the `returnUrl` that `openAuthSessionAsync` compares against, so the browser
->   resolved `dismiss` and the code was silently dropped.
->
-> - Email change — **fixed** (`1a493da`). Two defects: the callback screen read
->   a stale launch URL instead of the router's params, so the PKCE code was never
->   exchanged; and a `?message=` reply was treated as "not an auth link", hiding
->   the fact that **secure email change needs both links confirmed**. See §21.
->
-> The architecture, design rationale, RTL/plural rules and historical bug
-> post-mortems below remain accurate and are still worth reading.
+**Single source of truth. Last verified: 2026-08-03.**
 
-**Last verified:** 2026-07-29 · every claim below was checked against the live
-project and the working tree on that date, not recalled.
+Every claim here was checked against the live project, the live database or the
+working tree on that date — not recalled. Where something is unverified, it says
+so explicitly. `HANDOVER.md` is an older document kept for its post-mortems; if
+the two disagree, **this file is correct**.
 
-**Verification snapshot at handoff:**
+---
+
+## 0. Start here — the ten-minute version
+
+Vaultly is an Expo SDK 54 / React Native 0.81 Android app that stores receipts,
+warranties and subscriptions and warns you before something lapses.
+
+**State:** feature-complete against the design, type-clean, 110 tests passing, a
+**signed production AAB exists**, and the three blocking bugs that dominated
+development (launch crash, Google Sign-In, email change) are **all fixed and
+verified on a real device**.
+
+**What is not done:** no Play Console listing, no store products, no real receipt
+has been through the new OCR pipeline, and the repo has never been pushed to a
+remote.
+
+**Immediate next actions** — see §20 for the full ordered list:
+1. Push to GitHub and publish the privacy policy (blocked on your auth).
+2. Apply `supabase/migrations/0004_profile_prefs.sql` — a live bug (§18).
+3. Scan one real receipt to exercise the new pipeline (§11).
+
+**Verification gates, run 2026-08-03:**
 
 | Gate | Command | Result |
 |---|---|---|
-| Types | `npx tsc --noEmit` | clean |
-| Unit tests | `npm test` | 62 pass / 0 fail, 12 suites |
-| Database | `npm run db:check` | 10/10 PASS |
-| Edge Function | `npm run fn:check` | 4/4 PASS, deployed |
-| Bundles | Metro, android + ios | HTTP 200, ~10.4 MB each |
-
-**Not yet verified anywhere:** the real OCR round-trip and every
-authenticated-user path. See [Blocker](#the-one-blocker).
+| Types | `npx tsc --noEmit` | **clean** |
+| Tests | `npm test` | **110 pass / 0 fail, 23 suites** |
+| Database | `npm run db:check` | **10/10 PASS** |
+| Edge Function | `npm run fn:check` | **4/4 PASS** |
+| Production AAB | EAS `523f6dbc` | **finished, signed** |
 
 ---
 
-## 1. Project overview
+## 1. Environment and how to run
 
-Vaultly is a React Native (Expo) mobile app that stores a person's **receipts,
-warranties and subscriptions** and warns them before something lapses. You
-photograph a receipt, an AI model reads the merchant / total / date / warranty
-term, you confirm, and it lands in your vault with a live countdown and local
-reminders.
-
-- **Platforms:** iOS and Android only (`platforms: ['ios','android']`). No web.
-- **Languages:** English, Arabic (full RTL), Spanish, French, German.
-- **Primary market:** Saudi Arabia — SAR default currency, Hijri→Gregorian date
-  conversion in the OCR prompt, Arabic as a first-class RTL locale.
-- **Monetization:** free tier of **4 permanent items**, plus **one permanent 5th
-  slot** unlocked by watching a single rewarded ad — **once per account, never
-  expires**. From the 6th item onward the only route is Premium at SAR 10/month
-  for unlimited and ad-free. See §8a.
-
-**Where the code lives:**
-`C:\Users\عدي\OneDrive\سطح المكتب\تطبيق 1\Vaultly Digital Vault Setup\vaultly`
-
-Note the **two nested folders** — the outer `Vaultly Digital Vault Setup\`
-contains the design files, the inner `vaultly\` is the app. Almost every
-"file not found" confusion in this project traced back to that nesting.
-
-⚠️ **The project is not a git repository.** There is no version control and no
-rollback other than a manual copy. A pre-SDK-54 snapshot exists at
-`../_backup-sdk51-20260728-225812`. **Running `git init` should be an early
-task.**
-
-⚠️ The project sits inside a **OneDrive-synced** folder. Two consequences: files
-can change under you mid-edit while OneDrive syncs (this happened repeatedly),
-and `.env` contents are uploaded to Microsoft's cloud despite being gitignored.
-
----
-
-## 2. Product vision
-
-A vault that is *quiet until it matters*. The design goal is that opening the app
-answers one question — "is anything about to expire?" — before you read anything
-else. Concretely:
-
-- **Countdowns, never bare dates, in a status position.** "16 days left",
-  "Expires today", "Renews in 3 days". Absolute dates are demoted to captions.
-- **Urgency is colour only, never wording.** `countdownTone()` returns the tier;
-  the words come from translation keys so no locale gets an English pattern.
-- **Needs Attention merges warranties and renewals** into one urgency-ranked
-  list, so the user does not have to check two places.
-- **The scan is a first draft, not the truth.** Every extracted field is
-  editable before saving, confidence is surfaced, and the app never saves
-  silently.
-
----
-
-## 3. Current architecture
-
+**Code lives at:**
 ```
-┌─────────────────── Expo app (SDK 54, RN 0.81, React 19) ───────────────────┐
-│ app/            expo-router file routes (file-based, built on React Nav 7) │
-│ src/components  presentational + one shared picker per domain              │
-│ src/hooks       react-query wrappers, one concern each                     │
-│ src/services    all I/O: ocr/, receipts, storage, notifications, purchases │
-│ src/store       zustand: auth, entitlement, ui                             │
-│ src/lib         supabase client, dateMath, authCallback, errors, types     │
-│ src/mocks       in-memory backend, swapped in by one flag                  │
-└───────────────────────────────────────────────────────────────────────────┘
-        │                        │                         │
-   Supabase                analyze-receipt            RevenueCat / AdMob
-   Postgres + Auth         Edge Function (Deno)       (native, not wired)
-   + private Storage       holds OPENAI_API_KEY
+C:\Users\عدي\OneDrive\سطح المكتب\تطبيق 1\Vaultly Digital Vault Setup\vaultly
 ```
 
-**Three architectural rules that the whole codebase depends on:**
+Note the **two nested folders** — the outer `Vaultly Digital Vault Setup\` holds
+design files, the inner `vaultly\` is the app. Most "file not found" confusion
+traces to that nesting.
 
-1. **One backend switch.** `USE_MOCK_DATA` in `src/constants/config.ts` is read
-   in exactly **four** places — `services/receipts.ts`, `services/storage.ts`,
-   `services/ocr/index.ts`, `store/authStore.ts`. No screen, hook or query key
-   knows which backend is live. Never add a fifth read; delegate instead.
-2. **No AI key in the client, ever.** OCR goes through the Edge Function. There
-   is deliberately no `openaiApiKey` field in `config.ts` or `app.config.ts`.
-3. **All date arithmetic goes through `src/lib/dateMath.ts`.** It has zero app
-   imports so it runs under a bare test runner, and it is the only module
-   allowed to do calendar maths.
+The project sits in a **OneDrive-synced** folder. Files can change under you
+mid-edit, and `.env` is uploaded to Microsoft despite being gitignored.
+
+**Machine:** Arabic-language Windows 11, PowerShell. Node v24.18.0, JDK 21.
+
+⚠️ **The Bash tool has no Node on PATH.** Use PowerShell, or prefix:
+```bash
+export PATH="$PATH:/c/Program Files/nodejs"
+```
+
+⚠️ **PowerShell 5.1 `-Encoding utf8` writes a BOM** and re-encodes non-ASCII.
+Never use `Set-Content -Encoding utf8` on `.env` or any UTF-8 file — it corrupts
+them. Use `[System.IO.File]::WriteAllText(path, text, New-Object System.Text.UTF8Encoding($false))`.
+
+**Run the dev server:**
+```powershell
+cd "C:\Users\عدي\OneDrive\سطح المكتب\تطبيق 1\Vaultly Digital Vault Setup\vaultly"
+$env:REACT_NATIVE_PACKAGER_HOSTNAME = "192.168.0.163"
+npx expo start
+```
+
+⚠️ **The hostname pin is mandatory.** Two VMware adapters (`192.168.13.1`,
+`192.168.111.1`) enumerate ahead of Wi-Fi; without the pin Expo advertises an
+unreachable IP. The Wi-Fi address is DHCP — re-check with
+`Get-NetIPAddress -AddressFamily IPv4`.
+
+`expo-dev-client` is installed, so `expo start` runs in **dev-client** mode.
+
+**Launch the app on the device (bypasses the launcher UI):**
+```bash
+adb shell am start -a android.intent.action.VIEW \
+  -d "vaultly://expo-development-client/?url=http%3A%2F%2F192.168.0.163%3A8081"
+```
+
+**adb:** there is **no Android SDK** on this machine. Standalone platform-tools
+were unpacked to a scratch dir; if missing, re-download
+`https://dl.google.com/android/repository/platform-tools-latest-windows.zip`
+(≈8 MB, no install, no PATH change). `winget install Google.PlatformTools` fails
+with a stale-manifest hash mismatch.
+
+**USB debugging tell:** the phone (HONOR X9a 5G, `VID_339B`) exposes a third USB
+interface `MI_02 "ADB Interface"` only when USB debugging is genuinely on. If you
+see only `MI_00` (MTP) and `MI_01` (mass storage), it is off. Authorisation is
+revoked whenever the adb server restarts — expect to re-tap "Allow".
+
+**Verify a bundle compiles** (Metro only bundles on request):
+```
+http://localhost:8081/node_modules/expo-router/entry.bundle?platform=android&dev=true
+```
+Note the entry path — this is expo-router; `/index.bundle` 404s.
 
 ---
 
-## 4. Folder structure
+## 2. Repository and git
 
+- Branch **`main`**, **16 commits**, working tree **clean**.
+- Remote `origin` is configured but **nothing has ever been pushed**:
+  `https://github.com/Oodbdh/C-Users-OneDrive-1-Vaultly-Digital-Vault-Setup-vaultly-docs-privacy.html.git`
+- Push is blocked: `gh` is not installed and Git Credential Manager cannot prompt
+  non-interactively. The user must run `git push -u origin main` in their own
+  terminal once, after which cached credentials make further pushes work.
+- **Never `--force`.** The remote's contents are unknown; a read-only
+  `git ls-remote` was refused, which means the repo is private or does not exist
+  (GitHub returns the same challenge for both).
+
+⚠️ **The repo name is a problem.** It is auto-generated from a file path and will
+appear publicly in the Play listing as the privacy-policy URL. Rename it to
+`vaultly` before publishing.
+
+**Secret audit (done 2026-08-03):** `.env` is untracked; `.env.example` holds only
+placeholders; every credential-shaped match in tracked files is a variable *name*
+(`Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')`) or a deliberately bogus test JWT.
+Safe to publish.
+
+**Commit history:**
 ```
-vaultly/
-├── PROJECT_STATE.md            ← this file
-├── README.md                   operational runbook (setup, deploy, gotchas)
-├── app.config.ts               Expo config; env → `extra`
-├── tsconfig.json               strict, noUncheckedIndexedAccess, allowImportingTsExtensions
-├── babel.config.js             babel-preset-expo + module-resolver (@/ → src/)
-├── eas.json                    dev / preview / production build profiles
-├── .env                        gitignored, real values
-├── .env.example                committed placeholders
-├── assets/
-│   └── notification-icon.png   PLACEHOLDER — generated, replace with real art
-├── scripts/
-│   ├── check-supabase.mjs      npm run db:check   — schema/RLS/storage audit
-│   ├── check-function.mjs      npm run fn:check   — Edge Function guards
-│   ├── smoke-supabase.mjs      npm run db:smoke   — live end-to-end (blocked)
-│   └── fixtures/sample-receipt.png   legible synthetic receipt for OCR tests
-├── supabase/
-│   ├── setup.sql               ★ full schema, idempotent, APPLIED
-│   ├── migrations/0001_init.sql, 0002_storage.sql, 0003_rpc_grants.sql
-│   ├── migrations/0004_profile_prefs.sql        NOT applied
-│   ├── migrations/0005_permanent_bonus_slot.sql APPLIED 2026-08-02 (§8a)
-│   ├── functions/analyze-receipt/     DEPLOYED
-│   ├── functions/delete-account/      DEPLOYED
-│   ├── functions/grant-bonus-slot/    DEPLOYED
-│   └── functions/revenuecat-webhook/  DEPLOYED (verify_jwt false)
-├── app/                        (21 route files — see §16)
-└── src/                        (67 files — see §3)
+9feeb04  privacy policy + GitHub Pages workflow
+7281c24  fix release build: Android default-locale strings (lint)
+b9c5100  five-stage OCR extraction pipeline
+79795c4  RevenueCat Android SDK configured; iOS deferred
+cfa607a  deploy + verify RevenueCat webhook
+56dbbc3  record email-change root cause
+1a493da  fix email change (route params + GoTrue notices)
+0d957c7  fix Google Sign-In (createURL triple slash)
+bb0f35a  permanent one-time rewarded slot
+14ea9d6  record confirmed logcat trace for the launch crash
+d53306c  docs after AdMob removal
+ffb023a  remove react-native-google-mobile-ads (fixes launch crash)
+62a0b80  duration pickers, image viewer, account screen, renewal window, OCR fixes
+a5fa077  generate database types from live schema
+4951442  remove dead useVaultSummary hook
+693f804  initial commit
 ```
 
 ---
 
-## 5. Tech stack
+## 3. Architecture
 
-**Exact installed versions** (do not bump casually; several are pinned for real
-reasons documented in §24):
+```
+app/            expo-router file routes (22 routes)
+src/components  presentational + one shared picker per domain
+src/hooks       react-query wrappers, one concern each
+src/services    all I/O: ocr/, receipts, storage, notifications, profile,
+                purchases, ads, support
+src/store       zustand: auth, entitlement, ui
+src/lib         supabase client, dateMath, subscriptionRenewal, authCallback,
+                authRedirect, errors, types
+src/mocks       in-memory backend, swapped in by one flag
+docs/           privacy.html + .nojekyll (GitHub Pages)
+plugins/        local Expo config plugins
+supabase/       setup.sql, migrations/, functions/
+```
+
+**Four rules the codebase depends on:**
+
+1. **One backend switch.** `USE_MOCK_DATA` in `src/constants/config.ts`. No screen
+   or query key knows which backend is live — services delegate.
+2. **No AI key in the client, ever.** OCR goes through the Edge Function.
+3. **All date arithmetic through `src/lib/dateMath.ts`.** Zero app imports, so it
+   runs under the bare test runner. `src/lib/subscriptionRenewal.ts` follows the
+   same rule.
+4. **Native modules are lazily `require()`d.** `react-native-purchases` (and
+   AdMob, when it returns) do not exist in Expo Go; a top-level import crashes the
+   bundle before the first screen renders.
+
+**Styling:** no NativeWind. Tokens in `src/theme/`, applied inline. Keep it so.
+
+---
+
+## 4. Tech stack
 
 | Package | Version | Note |
 |---|---|---|
 | expo | ^54.0.36 | SDK 54 |
-| react-native | 0.81.5 | |
+| react-native | 0.81.5 | New Architecture enabled (`newArchEnabled=true`) |
 | react | 19.1.0 | |
-| react-dom | 19.1.0 | via `overrides` — see §24 |
-| expo-router | ~6.0.24 | file-based, on React Navigation 7 |
-| typescript | ~5.9.2 | **must stay ≥5.4** — see §24 |
-| @tanstack/react-query | ^5.59.0 | resolves to 5.101.x |
+| expo-router | ~6.0.24 | on React Navigation 7 |
+| expo-dev-client | ~6.0.21 | |
+| typescript | ~5.9.2 | **must stay ≥5.4** |
+| @tanstack/react-query | ^5.59.0 | |
 | @supabase/supabase-js | ^2.45.4 | |
 | zustand | ^4.5.5 | |
 | i18next / react-i18next | ^23.15.1 / ^15.0.2 | `compatibilityJSON: 'v3'` |
-| babel-preset-expo | ~54.0.10 | direct devDep, required |
-| expo-font | ~14.0.12 | direct dep, required by vector-icons |
-| supabase (CLI) | ^2.110.0 | devDependency → `npx supabase` |
-| @expo/ngrok | ^4.1.3 | devDep, for `--tunnel` |
+| react-native-purchases | ^8.2.2 | installed and **configured** (Android) |
+| ~~react-native-google-mobile-ads~~ | **removed** | §14 |
 
-Native modules present but **not exercised**: `react-native-purchases` ^8.2.2,
-`react-native-google-mobile-ads` ^14.2.5. Both are lazily `require()`d and
-absent from Expo Go (§11, §13).
+**TypeScript must stay ≥5.4.** react-query 5.6+ needs `NoInfer<T>`; on 5.3 every
+`useQuery` result silently becomes `any`. Expo warns it wants ~5.3.3. **Ignore.**
 
-**Styling:** no NativeWind. Design tokens in `src/theme/index.ts` +
-`src/theme/urgency.ts`, applied as inline style objects. Keep it that way.
+**Always `npx expo install`**, never plain `npm install`, for Expo packages.
 
-**Node:** v24.18.0. Tests use Node's built-in runner with native TS stripping —
-no Jest, no ts-node.
+**`react-dom` pinned to 19.1.0 via `overrides`** — it arrives transitively and
+otherwise floats to a version demanding a newer React than SDK 54 pins.
 
 ---
 
-## 6. Environment variables
+## 5. Environment variables
 
-All client vars must be prefixed `EXPO_PUBLIC_` to reach the app;
-`app.config.ts` copies them into `extra`, and `src/constants/config.ts` is the
-only module that reads `extra`. **Restart the dev server after any `.env`
-change** — it is read at startup only.
+**`.env` (local, gitignored):**
 
-Current `.env` state:
+| Variable | State |
+|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | **set** |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | **set** (`sb_publishable_…`) |
+| `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` | **set** (`goog_…`) |
+| `EXPO_PUBLIC_REVENUECAT_IOS_KEY` | empty — **intentional**, no iOS app yet |
+| `EXPO_PUBLIC_GEMINI_MODEL` | set (inert) |
+| `EXPO_PUBLIC_USE_MOCK_DATA` | empty ⇒ live database |
+| `EXPO_PUBLIC_AI_PROVIDER` | empty ⇒ `edge` |
+| `EXPO_PUBLIC_ADMOB_*` | empty (no longer read — §14) |
+| `EAS_PROJECT_ID` | empty; hardcoded fallback in `app.config.ts` |
 
-| Variable | State | Meaning |
-|---|---|---|
-| `EXPO_PUBLIC_SUPABASE_URL` | **set** | `https://baxlbbuxwajlzgdvpykw.supabase.co` |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | **set** | `sb_publishable_…` (new-style publishable key) |
-| `EXPO_PUBLIC_USE_MOCK_DATA` | empty | blank ⇒ **live** database |
-| `EXPO_PUBLIC_AI_PROVIDER` | empty | blank ⇒ `edge` (Edge Function) |
-| `EXPO_PUBLIC_GEMINI_API_KEY` | empty | legacy client-side path, unused |
-| `EXPO_PUBLIC_GEMINI_MODEL` | set | `gemini-2.0-flash` (inert) |
-| `EXPO_PUBLIC_REVENUECAT_IOS_KEY` | empty | **intentional** — no iOS app exists yet |
-| `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` | **set** (`goog_…`) | SDK configures on Android; also set as an EAS env var in all 3 environments |
-| `EXPO_PUBLIC_ADMOB_*` (4) | empty | ads inactive; plugin omitted from build |
-| `EAS_PROJECT_ID` | empty | needed for push tokens + EAS builds |
-| `EXPO_PUBLIC_SUPPORT_EMAIL` | not present | defaults to `support@vaultly.app` |
+**EAS environment variables** (all three environments: development, preview,
+production) — set 2026-08-03:
+```
+EXPO_PUBLIC_SUPABASE_URL
+EXPO_PUBLIC_SUPABASE_ANON_KEY
+EXPO_PUBLIC_REVENUECAT_ANDROID_KEY
+```
 
-**There is deliberately no `EXPO_PUBLIC_OPENAI_API_KEY`.** Adding one would
-compile a billable account-wide key into the app bundle. The key is a Supabase
-secret (§9).
+⚠️ **This matters more than it looks.** `USE_MOCK_DATA` is
+`!env.supabaseUrl || !env.supabaseAnonKey`. Before these were set on EAS, any
+cloud build would have shipped **running entirely on the in-memory mock backend**
+— fully functional-looking, with fake sign-in and seeded demo data that never
+persists. If you add an environment, set these three or you ship that bug.
 
----
+**There is deliberately no `EXPO_PUBLIC_OPENAI_API_KEY`.** It is a Supabase secret.
 
-## 7. Supabase configuration
-
-- **Project ref:** `baxlbbuxwajlzgdvpykw`
-- **Region:** `ap-south-1` · **Postgres:** 17.6.1 · **Status:** ACTIVE_HEALTHY
-- **CLI:** logged in and **linked** (`supabase/.temp/project-ref` present)
-
-**Auth — current settings (verified live):**
-
-| Setting | Value | Consequence |
-|---|---|---|
-| Providers enabled | `email` **only** | Apple/Google buttons on sign-in will fail |
-| `mailer_autoconfirm` | `false` | **confirmation required** — this is the blocker |
-| `disable_signup` | `false` | signups open |
-| Anonymous sign-in | disabled | no way to obtain a test JWT |
-
-**URL configuration — MUST be set for email verification to work.** Verify these
-are present; the flow silently dead-ends in a browser if not:
-
-- Site URL: `vaultly://auth-callback`
-- Redirect URLs: `vaultly://auth-callback` **and** `exp://**/--/auth-callback`
-
-The wildcard is required because the Expo Go host differs between LAN
-(`<ip>:8081`) and tunnel (`*.exp.direct`), and per machine.
-
-**Secrets set on the project** (names verified; values are hashed by the API and
-were never read):
-`OPENAI_API_KEY` plus the eight auto-injected `SUPABASE_*` secrets.
+Restart Metro after any `.env` change — read at startup only.
 
 ---
 
-## 8. Database schema
+## 6. Supabase
 
-Applied via `supabase/setup.sql` in the SQL Editor. `db:check` confirms all
-objects live. `setup.sql` is **idempotent** — safe to re-run.
+- **Project ref:** `baxlbbuxwajlzgdvpykw` · region `ap-south-1` · Postgres 17.6.1
+- CLI logged in and linked.
 
-**Tables** (all with RLS enabled, scoped to `auth.uid()`):
+**Run SQL against the live database without a password:**
+```bash
+npx supabase db query --linked -f path/to/file.sql
+```
+This goes through the Management API using the CLI login. Use `-f`; a multi-line
+inline string gets mangled. **Do not use `supabase db push`** — `setup.sql` is not
+recorded in migration history, so push would try to apply `0001_init.sql` from
+scratch and fail on bare `create type`.
 
-| Table | Purpose | Key columns |
-|---|---|---|
-| `profiles` | one row per user, auto-created on signup | `id`→auth.users, `display_name`, `locale`, `currency`, `plan_tier`, `premium_until`, `push_token` |
-| `vault_items` | the vault; one row per receipt/warranty/subscription | `kind` (enum), `merchant_name`, `total_amount`, `currency`, `purchase_date`, `category`, `image_path`, `ocr_status`, `ocr_raw`, `ocr_confidence` |
-| `warranties` | 1:1 with an item | `item_id`, `expires_on` (date, NOT NULL), `duration_months`, `reminder_days` `{30,7,1}` |
-| `subscriptions` | 1:1 with an item | `name`, `amount`, `period` (enum), `next_renewal` (date, NOT NULL), `auto_renews`, `reminder_days` `{3,1}` |
-| `bonus_slots` | the one-off rewarded grant, server-minted | `source`, `granted_at`, **unique(`user_id`)** — no expiry column |
+**Auth settings (verified live):**
 
-**Enums:** `item_kind`, `billing_period`, `plan_tier`, `ocr_status`.
+| Setting | Value |
+|---|---|
+| `external.email` | true |
+| `external.google` | **true** |
+| `external.apple` | false |
+| `mailer_autoconfirm` | **false** (confirmation required) |
+| Secure email change | **ON** — confirmed empirically (§13) |
+| Anonymous sign-in | disabled |
 
-**Indexes:** `vault_items(user_id, created_at desc)`, `vault_items(user_id, kind)`,
-`warranties(user_id, expires_on)`, `subscriptions(user_id, next_renewal)`,
-`bonus_slots` needs no extra index — the unique constraint on `user_id` provides one.
+Not readable via the anon key: Site URL, the Redirect URL allow-list, and
+`mailer_secure_email_change_enabled`. Read those in the dashboard.
+
+**Tables** (all RLS-enabled, scoped to `auth.uid()`): `profiles`, `vault_items`,
+`warranties`, `subscriptions`, `bonus_slots`.
+
+**Live `profiles` columns:** `id, display_name, locale, currency, plan_tier,
+premium_until, push_token, created_at, updated_at`.
 
 **Functions:** `touch_updated_at`, `handle_new_user`, `is_premium(uuid)`,
 `item_allowance(uuid)`, `enforce_item_quota`.
-
-**Triggers:** `profiles_touch`, `vault_items_touch`,
-`on_auth_user_created` (creates the profile row),
+**Triggers:** `profiles_touch`, `vault_items_touch`, `on_auth_user_created`,
 `vault_items_quota` (BEFORE INSERT — the authoritative quota check).
 
-**Policies (10):** read/update own profile; full CRUD on own items, warranties,
-subscriptions; read-only own bonus_slots (inserts are service-role only, so a
-user cannot mint slots without watching an ad); four `storage.objects` policies
-scoping the `receipts` bucket to a folder named after the user id.
+The client calls `is_premium` and `item_allowance` through PostgREST, which needs
+`GRANT EXECUTE` **in addition to** SECURITY DEFINER. Without it every call returns
+`PGRST202` and quotas silently fail.
 
-**Non-obvious but essential:** the client calls `is_premium` and `item_allowance`
-through PostgREST, which needs `GRANT EXECUTE` **in addition to** SECURITY
-DEFINER. `0001_init.sql` omits this; `setup.sql` and `0003_rpc_grants.sql` add
-it. Without the grant the functions exist but every call returns `PGRST202` and
-the quota system silently fails.
-
-**⚠️ Pick one migration path, never both.** `setup.sql` does not record itself in
-Supabase migration history, so a later `supabase db push` would try to apply
-`0001_init.sql` from scratch — and that file uses bare `create type`, which
-errors when the enums already exist.
-
-`src/lib/database.types.ts` is **hand-written** with empty `Relationships`, which
-is why `services/receipts.ts` casts the embedded join through `unknown`. Running
-`npm run db:types` against the live schema would remove those casts.
-
----
-
-## 8a. Free storage model — permanent one-time reward
-
-**Applied to the live database 2026-08-02** via
-`supabase/migrations/0005_permanent_bonus_slot.sql`. This **replaced** the
-previous model (up to 2 concurrent rewarded slots, each expiring after 24 hours).
-No part of the 24-hour model survives anywhere in the project.
-
-**The rule:**
-
-| State | Slots | Ad offered? |
-|---|---|---|
-| Free, reward unclaimed | 4 | **Yes — once** |
-| Free, reward claimed | **5, permanently** | **Never again** |
-| 6th item onward | — | Paywall only |
-| Premium | unlimited | Never (ad-free by construction) |
-
-**Where it is enforced — three independent layers, deliberately:**
-
-1. **`bonus_slots_user_once`**, a `unique (user_id)` constraint. This is the real
-   guarantee behind "once per account". Even if the Edge Function were called
-   twice, or two calls raced, the second insert fails.
-2. **`item_allowance(uid)`** = `4 + least(count(bonus_slots where user_id), 1)`.
-   The `least(…, 1)` caps a free user at 5 regardless of table contents, and
-   there is **no time component** — the slot cannot lapse.
-3. **`enforce_item_quota`** (BEFORE INSERT trigger) remains the authority on
-   writes, unchanged; it simply reads the new allowance.
-
-`grant-bonus-slot` rejects a second claim with `already_claimed` (409) and maps
-Postgres `23505` to the same response, so a race reports honestly rather than
-as a server error.
-
-**Client mirror** (`src/constants/config.ts`): `freeItemLimit: 4`,
-`rewardedSlotsPerAccount: 1`, derived `FREE_MAX_SLOTS = 5`. `useItemQuota`
-exposes `bonusUnlocked` (0 or 1) and `canWatchAd`; `watchAdForSlot()` refuses
-outright once claimed. Removed: `bonusSlotTtlHours`, `maxConcurrentBonusSlots`,
-`bonusSlotsPerAd`.
-
-**UI:** the ad is offered on Home's `QuotaBanner`, Profile's `RewardedSlotCard`,
-**and on the paywall itself** — the add flow routes to `/paywall` the moment the
-limit is hit, so without that the reward would have been unreachable from the
-main path. Once claimed, every one of those affordances disappears permanently.
-Copy in all five locales says "permanently"; `quota.bonusActive` and
-`quota.bonusMaxed` were deleted outright.
-
-**Verified live, 2026-08-02** (in a rolled-back transaction against a real user,
-leaving no residue): allowance 4 → 5 after one grant; second grant blocked by the
-unique constraint; allowance still 5; 5 items accepted; 6th rejected with
-`VAULTLY_QUOTA_EXCEEDED`; `expires_at` gone; `item_allowance` contains no
-time logic.
-
-⚠️ **The ad itself cannot run yet.** `react-native-google-mobile-ads` was removed
-to fix the Android launch crash (HANDOVER §14) and has deliberately **not** been
-re-added. `showRewardedAd()` therefore returns `unavailable` in live mode, so the
-grant path is currently unreachable from the UI even though the server side is
-live and correct. Re-adding AdMob is what activates it.
-
----
-
-## 9. Edge Functions
+**Edge Functions — all deployed:**
 
 | Function | Status | verify_jwt |
 |---|---|---|
-| `analyze-receipt` | **ACTIVE**, version 3 | `true` |
-| `delete-account` | **ACTIVE**, version 1 | `true` |
-| `grant-bonus-slot` | **ACTIVE**, version 1 (deployed 2026-08-02) | `true` |
-| `revenuecat-webhook` | **ACTIVE**, version 1 (deployed 2026-08-02) | **`false`** |
+| `analyze-receipt` | ACTIVE, **v5** | true |
+| `delete-account` | ACTIVE, v2 | true |
+| `grant-bonus-slot` | ACTIVE, v2 | true |
+| `revenuecat-webhook` | ACTIVE, v1 | **false** |
 
-⚠️ `revenuecat-webhook` **must** stay `verify_jwt: false`. RevenueCat authenticates
-with its own `Authorization: Bearer <REVENUECAT_WEBHOOK_SECRET>`, which is not a
-Supabase JWT — with verification on, the gateway rejects every delivery with 401
-before the function runs. Deploy it with `--no-verify-jwt`.
+⚠️ `revenuecat-webhook` **must** stay `verify_jwt: false` — RevenueCat sends its
+own bearer secret, not a Supabase JWT. Deploy it with `--no-verify-jwt`.
+Deploy others with `--use-api` (**Docker is not installed**).
 
-Deploy with `npm run fn:deploy` (which passes `--use-api`; **Docker is not
-installed** on this machine and the default deploy path wants it).
-
-`analyze-receipt` accepts `POST {imageBase64, mimeType}`, verifies the caller's
-JWT, rejects oversized (>8 MB base64) and non-image payloads, calls OpenAI, and
-returns `{data: <extraction>}` or `{error: {reason, message}}` where `reason`
-matches the client's union so the UI can distinguish quota / auth / unreadable.
-Upstream 401s are logged server-side and returned as a generic 502 — the key is
-never echoed.
-
-`fn:check` (4/4 PASS) verifies deployment, CORS preflight, the method guard and
-the auth guard. Body-validation branches sit behind the auth gate by design and
-are covered only by `db:smoke`.
-
-**Note:** an invalid JWT is rejected by Supabase's **gateway** before reaching
-the function, so it returns the platform's shape
-(`{"code":"UNAUTHORIZED_LEGACY_JWT"}`) rather than ours. `services/ocr/edge.ts`
-maps any 401 to `reason: 'auth'` for this reason.
+**Secrets set:** `OPENAI_API_KEY`, `REVENUECAT_WEBHOOK_SECRET`, plus the
+auto-injected `SUPABASE_*`.
 
 ---
 
-## 10. OpenAI OCR implementation
+## 7. Free storage model — permanent one-time reward
 
-**Architecture:** provider-agnostic, server-side by default.
+Applied live via `supabase/migrations/0005_permanent_bonus_slot.sql`. Replaced the
+old model (2 concurrent slots, each expiring after 24h). **No trace of the 24-hour
+model remains anywhere.**
 
-```
-src/services/ocr/
-├── types.ts    shape, prompt, JSON schema, normalise(), date helpers
-├── edge.ts     DEFAULT — POSTs to analyze-receipt with the session JWT
-├── gemini.ts   legacy: direct client call, key in bundle (opt-in only)
-└── index.ts    extractReceipt() — dispatches on AI_PROVIDER
-```
-
-Screens import only `@/services/ocr`. Every provider returns the same
-`normalise()`d `ReceiptExtraction`, so swapping models cannot change what the UI
-receives. Adding a provider = one file + one branch in `index.ts`.
-
-- **Model:** `gpt-4o-mini` (override with the `OPENAI_MODEL` Supabase secret).
-- **Structured Outputs**, `strict: true`, every key in `required` with null
-  allowed instead of optionality.
-- **Validation happens twice** — server-side and again in `normalise()` on the
-  client. The screens' contract is `normalise()`, not whatever the model
-  returned.
-- `edge.ts` uses `fetch`, **not** `supabase.functions.invoke`, because
-  `FunctionInvokeOptions` has no `signal` — invoke cannot be cancelled, so
-  backing out of a scan would leave a billable request running.
-- PDFs are rejected client-side (the vision endpoint can't take them as
-  `image_url`) to avoid a round trip that can only fail.
-- With no provider available, `USE_MOCK_OCR` returns a canned extraction so the
-  scan flow stays walkable.
-
----
-
-## 11. RevenueCat integration status
-
-**Code: complete. Configuration: not started. Never executed.**
-
-`src/services/purchases.ts` wraps the SDK behind a lazy `require()` — a
-top-level import crashes the bundle in Expo Go, where the native module doesn't
-exist. Every function degrades to "not configured": `getMonthlyPackage()`
-returns nulls, `hasPremium()` is false, `restorePurchases()` returns null.
-
-The paywall therefore falls back to the static `SAR 10` label and the purchase
-button cannot complete. `usePremium().isPremium` is the single gate every
-monetization decision reads.
-
-**Server side: DONE and verified 2026-08-02.**
-
-- `revenuecat-webhook` **deployed**, `verify_jwt: false` (§9).
-- `REVENUECAT_WEBHOOK_SECRET` **set** as a Supabase secret.
-- Verified by driving the live function with synthetic RevenueCat events:
-  no auth → 401; wrong secret → 401; unrelated entitlement → `ignored`;
-  `INITIAL_PURCHASE` + `premium_access` → `profiles.plan_tier` `free → premium`,
-  `premium_until` set, `is_premium()` true, `item_allowance()` `4 → 2147483647`,
-  and **only** the targeted user changed. A rolled-back transaction then proved
-  premium really bypasses `enforce_item_quota` — 12 items accepted where free
-  stops at 5. `CANCELLATION` and `EXPIRATION` returned the row to exactly its
-  original state.
-
-**Android SDK: CONFIGURED and verified on device 2026-08-03.**
-
-`EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` is set in `.env` **and** as an EAS env var
-in all three environments (development / preview / production), so cloud builds
-carry it. No code changed — the key was a pure drop-in, as designed.
-
-Verified from the running app's own SDK logs:
-
-```
-[RevenueCat] SDK Version - 8.24.0
-[RevenueCat] Package name - com.adialfaifi.vaultly
-[RevenueCat] 👤 Initial App User ID - 3b9a5850-…   ← the Supabase uid
-[RevenueCat] Starting connection for BillingClientImpl
-[RevenueCat] 😻 CustomerInfo updated from network.
-```
-
-The App User ID **is** the Supabase uid, which is what makes the webhook's
-`.eq('id', event.app_user_id)` mapping work.
-
-**Restore Purchases verified end to end** by driving the real button on device:
-the SDK logged `restorePurchases has been called` → `No purchases found to
-restore`, and the app showed `paywall.restoreNone` ("no previous purchases").
-Before the key it could only ever report `unavailable`; it now correctly
-distinguishes *nothing to restore* from *store unavailable*.
-
-**iOS deliberately deferred** — no iOS app exists yet. `configurePurchases()`
-uses `Platform.select`, so the empty iOS key affects nothing on Android. Add
-`EXPO_PUBLIC_REVENUECAT_IOS_KEY` when the iOS app is created; no code change.
-
-**Still required (external, none of it code):**
-1. Create the SAR 10/month subscription in Play Console, and map it to offering
-   **`default`** with entitlement **`premium_access`** in RevenueCat.
-   RevenueCat currently reports, in its own words:
-   *"There are no products registered in the RevenueCat dashboard for your
-   offerings"* — which is the single remaining blocker.
-2. Add the webhook URL + `REVENUECAT_WEBHOOK_SECRET` in the RevenueCat dashboard
-   (the endpoint is deployed and verified — see above).
-3. A real purchase on a dev client — impossible in Expo Go.
-
-The Supabase user id is passed as the RevenueCat App User ID so entitlements
-follow the account across devices and the webhook can map back to a profile row.
-
-⚠️ **Known race, deliberately not addressed:** after a purchase the *client*
-flips to premium instantly (`setInfo` → `isPremium`), but `profiles` only
-updates when the webhook lands. A 6th item added in that window can still be
-rejected by `enforce_item_quota`. Fixing it means touching quota logic.
-
----
-
-## 12. Authentication implementation
-
-**Email + password with confirmation, PKCE, deep-linked back into the app.**
-
-- `flowType: 'pkce'` in `src/lib/supabase.ts` — the email carries a single-use
-  `code`, worthless without the verifier stored on the device. This also
-  survives email clients that prefetch links, which silently burns an
-  implicit-flow token.
-- `src/lib/authRedirect.ts` is the **only** place the callback URL is built.
-  `Linking.createURL('/auth-callback')` emits `exp://…/--/auth-callback` in Expo
-  Go and `vaultly://auth-callback` in a build.
-- `src/lib/authCallback.ts` redeems whatever comes back, handling **all four**
-  shapes: `?code=` (PKCE), `?token_hash=&type=` (templates using
-  `{{ .TokenHash }}`), `#access_token=&refresh_token=` (implicit/OAuth), and
-  `?error=&error_description=`.
-- `app/auth-callback.tsx` reads the URL via `Linking.useURL()` — **not** route
-  params, because the implicit flow puts tokens in the fragment, which the
-  router does not expose. A `useRef` guard stops the single-use code being
-  redeemed twice.
-- **The auth gate in `app/_layout.tsx` exempts `auth-callback` in both
-  directions.** Without that exemption the signed-out rule unmounts the screen
-  mid-exchange and the confirmation link silently does nothing. Do not remove
-  this.
-- Sign-in distinguishes `email_not_confirmed` from bad credentials and offers
-  **Resend** instead of sending the user into a useless password-reset loop.
-- `authStore.signUpWithEmail` passes `emailRedirectTo`; there is also
-  `resendConfirmation`.
-
-**Cross-device caveat:** PKCE binds the code to the signup device. Signing up on
-a phone and opening the mail on a laptop fails by design. To support it, switch
-the *Confirm signup* template to `{{ .TokenHash }}` — `authCallback.ts` already
-handles that shape, so it is a dashboard-only change.
-
----
-
-## 13. Google Sign-In status
-
-**Not functional. UI exists.**
-
-`app/(auth)/sign-in.tsx` renders "Continue with Apple" and "Continue with
-Google" buttons wired to `supabase.auth.signInWithOAuth` →
-`WebBrowser.openAuthSessionAsync` → the shared `completeAuthFromUrl`.
-
-The code path is correct and now understands PKCE (it previously did manual
-fragment parsing that missed `code` entirely). But **only the `email` provider is
-enabled** on the Supabase project, so both buttons return an error; the UI shows
-`auth.errors.providerUnavailable`.
-
-**To activate Google:** enable the Google provider in Supabase Auth, supply the
-OAuth client credentials, and add `vaultly://auth-callback` as an authorised
-redirect. Apple additionally requires an Apple Developer account and Sign in
-with Apple configuration. Neither has been started.
-
----
-
-## 14. AdMob status
-
-**Package removed. Code retained and dormant. Never executed.**
-
-⚠️ `react-native-google-mobile-ads` is **not installed** — it was removed to fix
-the Android launch crash (HANDOVER §14: it autolinked a native SDK with a blank
-`APPLICATION_ID`, which threw from `MobileAdsInitProvider` before React Native
-started). Re-adding it is a deliberate later step; **do not re-add it without
-real app IDs.**
-
-Consequence for the reward model (§8a): the server side is live and correct, but
-`showRewardedAd()` returns `unavailable` in live mode, so the grant path cannot
-currently be reached from the UI. In **mock mode** it still simulates an earned
-reward after 1.2s, which is the only way to walk the flow today.
-
-`src/services/ads.ts` lazily requires the module and degrades on its own, so
-nothing else needs to change when it comes back — except reverting the
-structural `AdsModule` type to `typeof import('react-native-google-mobile-ads')`.
-
-`initAds()` sets `maxAdContentRating: PG` and requests
-`requestNonPersonalizedAdsOnly`. `usePremium().showAds` is the single ad gate —
-premium is ad-free by construction.
-
-**The AdMob config plugin block was deleted from `app.config.ts`** along with the
-package, together with both `config.googleMobileAdsAppId` entries. HANDOVER §11
-lists the exact steps to restore them.
-
-The rewarded grant is minted only by `grant-bonus-slot` (service role) after the
-SDK fires `EARNED_REWARD` — clients cannot insert into `bonus_slots` (RLS).
-**That function is now DEPLOYED and verified**, so the moment AdMob returns the
-grant path works end to end with no further server work.
-
----
-
-## 15. Storage configuration
-
-- Bucket **`receipts`**, private, 10 MB limit, MIME allow-list:
-  `image/jpeg, image/png, image/heic, image/webp, application/pdf`.
-- Objects keyed `<user_id>/<timestamp>-<rand>.<ext>`; four RLS policies scope
-  every operation to a folder matching `auth.uid()`.
-- Reads go through **short-lived signed URLs** (`signedReceiptUrl`, 1h default).
-- `src/services/storage.ts` uses the **SDK 54 `File` API**. `File.bytes()`
-  returns a `Uint8Array` directly, which let a hand-rolled base64 decoder be
-  deleted. The old `readAsStringAsync` / `EncodingType` API is gone in
-  expo-file-system 19.
-
-**Verification note:** you cannot check whether the bucket exists by *listing*
-buckets — the anon key isn't permitted to, and it returns `[]` either way. That
-produced a false "bucket missing" result once. `check-supabase.mjs` now probes
-with a deliberately disallowed `text/plain` upload: `404 Bucket not found` means
-absent, `415 invalid_mime_type` means present with the allow-list working.
-
----
-
-## 16. Notification system
-
-Local reminders only, via `expo-notifications`.
-
-- Warranties: **30 / 7 / 1** days before `expires_on`.
-- Subscriptions: **3 / 1** days before `next_renewal`.
-- Identifiers are derived (`warranty:<itemId>:<days>`) so re-scheduling is
-  idempotent; `cancelRemindersFor(entityId)` matches on the id segment.
-- Fired at 09:00 local on the target date.
-- Scheduled from `services/receipts.ts` on create, in **both** the live and mock
-  paths, so a manually entered date flows through to the reminders.
-
-**Push notifications do not work in Expo Go** — removed from Expo Go in SDK 53.
-`registerForPush` wraps `getExpoPushTokenAsync` in try/catch and returns null, so
-this degrades silently. Push tokens need `EAS_PROJECT_ID` and a dev build.
-`profiles.push_token` is written only in live mode.
-
-SDK 54 API notes: `setNotificationHandler` now requires `shouldShowBanner` and
-`shouldShowList` alongside `shouldShowAlert`, and triggers require
-`{type: SchedulableTriggerInputTypes.DATE, date}`.
-
----
-
-## 17. Localization
-
-Five locales: **en, ar, es, fr, de**. `src/i18n/`.
-
-- `compatibilityJSON: 'v3'` — **required** for Arabic plurals.
-- **Arabic needs all six CLDR plural forms** (`_0` zero, `_1` one, `_2` two, `_3`
-  few 3–10, `_4` many 11–99, `_5` other). This is not optional: a missing form
-  makes i18next fall back to the base key, and **that caused a real shipped bug**
-  where the 6-month warranty chip was labelled "شهر واحد" (one month) — see §21.
-  `warranty.months/days/years`, `relative.daysLeft`, `relative.expiredAgo`,
-  `relative.renewsInDays`, `relative.renewalOverdue` and `list.results` all ship
-  the six forms.
-- `plurals.test.ts` locks this: it asserts across all five locales that distinct
-  counts render distinct labels. Arabic's singular and dual forms legitimately
-  carry no numeral, so counts 1 and 2 are exempt from the digit check.
-- **RTL rule: logical properties only** — `paddingStart`, `marginEnd`,
-  `start`/`end`, `textAlign: 'left'`. RN flips these automatically.
-  `useDirection()` covers what RN does not: icon mirroring, transforms, raw
-  x-offsets. `flipIcon` is typed as a bare transform (not `ViewStyle`) because RN
-  0.81 stopped letting `ViewStyle` flow into a `TextStyle` slot.
-- LTR↔LTR switches apply instantly; crossing the LTR↔RTL boundary needs a native
-  reload, so the app confirms first then calls `Updates.reloadAsync()` — wrapped,
-  because that throws in Expo Go.
-- Numbers/currency/dates go through `formatCurrency` / `formatDate`, which read
-  each language's `intlTag`.
-- Adding a language: locale JSON + one `LANGUAGES` entry + add the code to
-  `SUPPORTED_LOCALES` and import it in `i18n/index.ts` (RN's bundler has no
-  dynamic require).
-- **Long-form prose lives in `src/content/support.ts`, not the locale JSON** —
-  FAQ, Privacy, Terms, in **en + ar only**; the other three fall back to English.
-
----
-
-## 18. Current UI structure
-
-Design source of truth: `../Vaultly Screens.dc.html` (four iterations; **t4 is
-current**). Implementation matches t4.
-
-**Design tokens** (`src/theme/`): bg `#FAFAF8`, surface `#FFF`, border `#E7E5E0`,
-text `#14161A`, muted `#6B7280`, primary navy `#1B2A4A`, gold `#C8A548`. Cards:
-16px radius, 1px border, 16px padding. Urgency ramp green `#2F7D5B` → amber
-`#B98200` → red `#C1452F`, each with a tinted badge surface. Arabic runs 1–2px
-larger with looser leading via `typeScale(locale)`.
-
-**Navigation** — three-slot bottom bar: **Home · FAB · Profile**. The FAB is not
-a tab; it is an elevated 64px circle overlapping the bar that opens the add
-sheet, with a spacer tab reserving its slot. List screens push over the tabs so
-Back always returns Home.
-
-**Routes (21):**
-
-```
-_layout.tsx            i18n boot, providers, auth gate, Stack registry
-index.tsx              → redirect to (tabs)/home
-(auth)/sign-in         email + password, OAuth buttons, resend
-(auth)/sign-up         + "check your email" state
-auth-callback          deep-link redemption
-(tabs)/home            greeting, quota, 3 stat tiles, Needs Attention, 3 sections
-(tabs)/profile         identity, premium banner, 4 grouped sections
-(tabs)/add-placeholder never rendered — reserves the FAB slot
-invoices | warranties | subscriptions   list screens w/ search, filter, sort
-search                 cross-entity search
-item/new               camera → OCR → review → save
-item/[id]              detail: artefact, countdown, overview, actions
-item/add-warranty      manual entry + WarrantyDurationPicker
-item/add-subscription  manual entry + RenewalPicker
-paywall                SAR 10/month
-support/faq            accordion, 10 questions
-support/legal          ?doc=privacy|terms
-```
-
-**Overlays:** AddSheet (FAB), DetectionSheet ("We detected a subscription"),
-LanguagePicker (scrollable, rendered from `languages.ts`).
-
-**Shared pickers** — `WarrantyDurationPicker` and `RenewalPicker` both use
-`SelectChip`. They were deliberately unified after divergence caused the
-mislabelled-chip bug; keep them sharing.
-
----
-
-## 19. Completed features
-
-- ✅ All 21 routes implemented to design t4, EN + AR (+3 locales)
-- ✅ Full RTL, verified against the Arabic design boards
-- ✅ Expo SDK 51 → **54** upgrade (RN 0.81, React 19), 18/18 expo-doctor
-- ✅ Supabase schema applied and verified (10/10 `db:check`)
-- ✅ RLS verified: anonymous reads return nothing, anonymous writes rejected
-- ✅ `analyze-receipt` Edge Function deployed, `OPENAI_API_KEY` set as a secret
-- ✅ **No AI key in the bundle** — verified by grepping the compiled bundle for
-  `api.openai.com`, `sk-proj-`, `sk-[A-Za-z0-9]{20}`, `OPENAI_API_KEY`: all absent
-- ✅ Email verification flow with PKCE deep linking (§12)
-- ✅ Mock backend — full app runs with zero credentials
-- ✅ Calendar-correct date arithmetic + 62 passing tests
-- ✅ Warranty durations: 1/3/6/12/24 months, Custom (days/months/years), exact date
-- ✅ Subscription renewal: cycle-derived or **Set manually**, with validation
-- ✅ Help & Support: FAQ, Contact, Report a bug, Request a feature, Privacy, Terms
-- ✅ Local reminders wired on both backends
-- ✅ Quota system: client UX + DB trigger as authority
-- ✅ Three verification scripts (`db:check`, `fn:check`, `db:smoke`)
-
----
-
-## 20. Remaining tasks
-
-**Blocking release**
-
-1. `git init` + first commit. No version control today.
-2. Turn `mailer_autoconfirm` **off temporarily**, run `npm run db:smoke -- --yes`,
-   turn it back **on**. This is the only way to verify authenticated paths.
-3. Verify the real OCR round-trip (covered by `db:smoke` step above).
-4. Replace `assets/notification-icon.png` — generated placeholder.
-5. Fill `LEGAL_ENTITY` in `src/content/support.ts` (currently renders the literal
-   string `[Vaultly — registered operator name]`), confirm jurisdiction, and have
-   Privacy + Terms reviewed by a lawyer.
-6. Set `EXPO_PUBLIC_SUPPORT_EMAIL` to a real, monitored inbox.
-7. Confirm the two Supabase redirect URLs are saved (§7).
-
-**Before monetization**
-
-8. RevenueCat: store products, entitlement `premium_access`, SDK keys. The
-   webhook and its secret are already deployed and verified (§11).
-9. AdMob: re-add `react-native-google-mobile-ads` with **real** app IDs + rewarded
-   unit IDs. `grant-bonus-slot` is already deployed and verified (§8a, §14).
-10. `eas init` → `EAS_PROJECT_ID`; build a dev client. Neither RevenueCat nor
-    AdMob nor push can be tested in Expo Go.
-
-**Product gaps**
-
-11. Enable Google + Apple providers, or remove the buttons (§13).
-12. Subscriptions have schema, reminders and screens but **no edit flow**.
-13. Settings notification toggles are local `useState` — not persisted.
-14. Profile rows "Account details" and "Categories" still call an
-    `Alert`-only stub.
-15. "Backup & restore" row is a stub — no export exists.
-16. Offline is out of scope by decision: no cache, no sync queue.
-
----
-
-## 21. Known issues
-
-| Issue | Impact | Notes |
+| State | Slots | Ad offered? |
 |---|---|---|
-| **Email confirmation blocks all authenticated testing** | High | `mailer_autoconfirm: false` + anonymous sign-in disabled ⇒ no obtainable JWT. `db:smoke` refuses to run rather than mail a stranger. |
-| Apple/Google buttons fail | Medium | Only `email` provider enabled (§13) |
-| `useVaultSummary.ts` is dead code | Low | Unused, and queries Supabase directly — **bypasses the mock switch**. Will break if wired up as-is. Delete or route through `services/`. |
-| Progress bar uses `duration_months * 30` | Low | `item/[id].tsx` — a fixed approximation. Affects only bar fill, never the day count. Left deliberately to avoid a visual change. |
-| Hand-written `database.types.ts` | Low | Forces `as unknown as` casts on the embedded join in `receipts.ts`. `npm run db:types` fixes it. |
-| Push notifications absent in Expo Go | Low | Expected since SDK 53; handled |
-| Expo warns TypeScript ~5.3.3 expected | Cosmetic | **Ignore.** Reverting reintroduces a real bug (§24) |
-| OneDrive sync races | Annoyance | Files can change mid-edit |
+| Free, reward unclaimed | 4 | **Yes, once** |
+| Free, reward claimed | **5, permanently** | **Never again** |
+| 6th item onward | — | Paywall only |
+| Premium | unlimited | Never |
 
-### Email change — RESOLVED (`1a493da`)
+**Three enforcement layers:**
+1. `bonus_slots_user_once` — `unique (user_id)`. The real guarantee: a second
+   insert fails even if the Edge Function is called twice or two calls race.
+2. `item_allowance(uid)` = `4 + least(count(bonus_slots), 1)`. No time component.
+3. `enforce_item_quota` trigger — unchanged, reads the new allowance.
 
-**Symptom was:** request an email change, click the link, app opens, address
-never updates; server holds `email_change` pending indefinitely.
+Client mirror: `MONETIZATION.freeItemLimit = 4`, `rewardedSlotsPerAccount = 1`,
+derived `FREE_MAX_SLOTS = 5`. `useItemQuota` exposes `bonusUnlocked` and
+`canWatchAd`.
 
-**Two independent defects, both confirmed by instrumented device traces, not
-inferred:**
+The ad is offered on Home's `QuotaBanner`, Profile's `RewardedSlotCard`, **and on
+the paywall** — the add flow routes to `/paywall` the moment the limit is hit, so
+without that the reward would be unreachable from the main path.
 
-**1. Secure email change requires *two* confirmations.** It is **enabled** on
-this project. GoTrue's verbatim reply to the first link:
+**Verified live** in a rolled-back transaction: allowance 4→5, second grant
+blocked, 5 items accepted, 6th rejected with `VAULTLY_QUOTA_EXCEEDED`.
 
-> "Confirmation link accepted. Please proceed to confirm link sent to the other
-> email"
+⚠️ **The ad cannot actually run** — AdMob is removed (§14), so `showRewardedAd()`
+returns `unavailable`. Walkable only in mock mode.
+
+---
+
+## 8. OCR — five-stage extraction pipeline
+
+Rewritten in `b9c5100`, deployed as `analyze-receipt` **v5**. Replaced a single
+vision request that both read and interpreted the image.
+
+```
+1. Transcribe   vision model → ordered text blocks, nothing interpreted
+2. Candidates   pure rules propose every plausible value    (pipeline.ts)
+3. Validate     pure rules score and pick, 0-100 per field  (pipeline.ts)
+4. Reason       text-only LLM chooses among those candidates
+5. Verify       text-only LLM audits 3 vs 4
+   → reconcile() arbitrates deterministically, floor applied
+```
+
+**Files:**
+- `supabase/functions/analyze-receipt/pipeline.ts` — pure, dependency-free, no
+  Deno globals, so Node's test runner imports it directly.
+- `supabase/functions/analyze-receipt/pipeline.test.ts` — **34 tests**.
+- `index.ts` — orchestration only.
+
+`reconcile()` is the last word: agreement raises confidence, disagreement takes
+the better-supported side and docks it, **the LLM alone is capped at 75 and can
+never install a value the rules rejected**. Below **70** → null. Missing beats
+wrong.
+
+**Rules worth knowing:** grand-total phrasing beats bare "total" beats subtotal
+(fallback only); VAT and change-due lines excluded; on "was 199 now 149" the
+payable price wins; when `subtotal + VAT` equals a candidate it is promoted to 90.
+Merchant detection is exclusion-driven (headers, addresses, contacts, VAT-reg
+lines, slogans stripped). Dates are role-tagged so a due/renewal date can never
+become the purchase date; ambiguous `05/06` is assumed dd/mm but held below the
+floor; Hijri converts tabularly and is capped at 60 (±1 day). Arabic-Indic digits,
+`٫`/`٬` separators, Arabic month names and dual forms (`سنتين` = 24 months) are
+handled.
+
+**Cost:** three model calls per scan, but only stage 1 sends the image; 4 and 5
+are text-only over a 6k-char capped transcript.
+
+⚠️ **Never exercised on a real receipt.** The rules have 34 unit tests and the
+function boots correctly, but no photo has been through the live pipeline. **This
+is the highest-value untested path in the project.**
+
+**Not implemented, deliberately:** bounding-box coordinates (needs a real OCR
+engine, not a vision LLM — `TextBlock.bbox` exists for later) and client-side
+deskew/contrast (needs `expo-image-manipulator`, a native module this build lacks).
+
+The legacy Gemini provider (`AI_PROVIDER=gemini`) is untouched and still
+single-shot.
+
+---
+
+## 9. Authentication
+
+Email + password with confirmation, and Google OAuth. PKCE throughout
+(`flowType: 'pkce'` in `src/lib/supabase.ts`).
+
+`src/lib/authRedirect.ts` is the **only** place the callback URL is built.
+`src/lib/authCallback.ts` redeems whatever comes back, handling five shapes:
+`?code=` (PKCE), `?token_hash=&type=`, `#access_token=&refresh_token=`,
+`?error=`, and `?message=` (§13).
+
+**The auth gate in `app/_layout.tsx` exempts `auth-callback` in both directions.**
+Without that the signed-out rule unmounts the screen mid-exchange and the link
+silently does nothing. Do not remove this.
+
+### Fixed: Google Sign-In (`0d957c7`)
+
+`authRedirectTo()` passed a **leading slash** to `Linking.createURL`. In a build
+with a custom scheme `hostUri` is empty and normalises to `/`, so
+`'/auth-callback'` produced **three** slashes:
+
+```
+vaultly:///auth-callback   ← broken
+vaultly://auth-callback    ← correct
+```
+
+That broke two things at once, neither of which reports an error: it is not on the
+Supabase allow-list, and it is the `returnUrl` that `openAuthSessionAsync` matches
+with `startsWith` — so the browser resolved `dismiss`, and `sign-in.tsx` returned
+at `if (result.type !== 'success')` without ever exchanging the code. Symptom was
+an account picker followed by a silent bounce back to Sign In.
+
+**Verified on device:** `result.type=success`, `exchange DONE err=none`,
+`SIGNED_IN`, two accounts signed in.
+
+---
+
+## 10. Email change — fixed (`1a493da`)
+
+Two independent defects.
+
+**1. Secure email change needs TWO confirmations.** It is **enabled**. GoTrue's
+verbatim reply to the first link:
+
+> "Confirmation link accepted. Please proceed to confirm link sent to the other email"
 
 and `auth.users.email_change_confirm_status` sits at **1** until the second link
-is opened. An earlier belief that only one mail is sent was **wrong** — both
-addresses receive one, and clicking both completes the change (observed live:
-user `3b9a5850` moved to its new address, pending cleared).
-
-`completeAuthFromUrl` had no branch for `?message=`, so this fell through to
-`ignored` and the screen silently replaced to Home. That is why it read as
-"nothing happened" instead of "one more step".
+is opened. `completeAuthFromUrl` had no branch for `?message=`, so this fell
+through to `ignored` and the screen silently replaced to Home.
 
 **2. The callback screen never saw the deep link.** It read the URL via
 `Linking.useURL()`, which resolves `getInitialURL()` (the *launch* URL) and
-otherwise waits for a `url` event that has already fired by the time the screen
-mounts. Under the dev launcher the launch URL is permanently
-`vaultly://expo-development-client/?url=…`. Traces showed the router holding the
-real value while the handler got the stale one:
+otherwise waits for a `url` event that has already fired by mount time. Under the
+dev launcher the launch URL is permanently
+`vaultly://expo-development-client/?url=…`. The router held the real `code` while
+the handler got the stale URL, so `exchangeCodeForSession` was **never called**.
 
-```
-callback routeParams= {"code":"<redacted len=36>"}
-callback useURL=      vaultly://expo-development-client/?url=…
-parsed keys= ["url"] -> IGNORED
-```
+**Fix:** route params are the primary source in `app/auth-callback.tsx`
+(`useURL()` kept as fallback for the implicit flow's fragment, which the router
+does not expose), plus a `notice` status that surfaces GoTrue's own wording.
 
-so `exchangeCodeForSession` was never called. Google Sign-In survived this only
-because `sign-in.tsx` has an independent handler; the email path had no backup.
+**It was never a refresh bug** — `refreshSession()`/`refreshUser()` were correct
+throughout and returned the old address because the server still held it.
 
-**Fix:** route params are now the primary source in `app/auth-callback.tsx`
-(`useURL()` kept as fallback — the implicit flow puts tokens in the fragment,
-which the router does not expose), plus a `notice` status that surfaces GoTrue's
-own wording. **It was never a refresh bug** — `refreshSession()` / `refreshUser()`
-were correct throughout and returned the old address because the server still
-held it.
+⚠️ **Open product decision:** `account.emailPending` still tells the user to check
+only the *new* address, while the flow requires opening **both** links. Either
+reword in five locales, or turn Secure email change off in the dashboard.
 
-⚠️ **Still worth deciding:** the app tells the user to check only the *new*
-address (`account.emailPending`). With secure email change on, they must open
-**both** links. Either reword that string in all five locales, or turn "Secure
-email change" off in the dashboard — a product/security call, not made here.
-
-**Fixed, recorded so they are not reintroduced:**
-
-- **Arabic plural fallback** — `warranty.months` shipped without `_0`–`_5`, so
-  Arabic count=6 fell back to a hardcoded singular *"one month"*. The 6-month
-  chip was labelled "1 month"; tapping it stored 6 months and showed ~184 days.
-  The reported "date bug" was a **translation** bug.
-- **`setMonth` month overflow** — `31 Jan + 1 month` produced `3 Mar`.
-- **UTC/local drift** — `new Date('2026-01-31')` parsed as UTC then read with
-  local getters landed a day early west of Greenwich.
-- **react-query typed as `any`** — TypeScript 5.3.3 lacks `NoInfer<T>`, which
-  react-query 5.6+ needs. Every `useQuery` result silently degraded to `any`,
-  hiding four real bugs.
-- **`/auth-callback` route did not exist** — every OAuth attempt dead-ended.
-- **Auth gate unmounted the callback screen** mid-exchange.
-- **Cycle change wiped a typed renewal date** in the subscription form.
-- **`functions.invoke` has no `signal`** — cancellation was silently ignored.
+⚠️ Supabase's built-in SMTP is heavily rate-limited and each change sends two
+emails, so testing exhausts the quota fast.
 
 ---
 
-## 22. TODO list
+## 11. Android launch crash — fixed and verified
 
-Ordered. Items 1–4 unblock everything else.
+**Root cause, from a captured on-device logcat trace:**
+```
+FATAL EXCEPTION: main
+java.lang.RuntimeException: Unable to get provider
+  com.google.android.gms.ads.MobileAdsInitProvider:
+  java.lang.IllegalStateException: Invalid application ID
+  at ActivityThread.installProvider / installContentProviders
+  at ActivityThread.handleBindApplication
+```
 
-```
-[ ]  1. git init; commit; add a remote
-[ ]  2. Supabase → Auth → Providers → Email: turn OFF "Confirm email"
-[ ]  3. npm run db:smoke -- --yes        (verifies auth, RLS, quota, storage, OCR)
-[ ]  4. Turn "Confirm email" back ON
-[ ]  5. Manual pass: sign up with a real address, tap the link, confirm it opens the app
-[ ]  6. npm run db:types                 (drops the `as unknown as` casts)
-[ ]  7. Delete or fix src/hooks/useVaultSummary.ts
-[ ]  8. Replace assets/notification-icon.png
-[ ]  9. Fill LEGAL_ENTITY; legal review of Privacy + Terms
-[ ] 10. Set EXPO_PUBLIC_SUPPORT_EMAIL to a monitored inbox
-[ ] 11. eas init → EAS_PROJECT_ID; eas build --profile development
-[ ] 12. On the dev client: verify push tokens, RevenueCat, AdMob
-[x] 13. Deploy grant-bonus-slot            (done 2026-08-02)
-[x] 13b. Deploy revenuecat-webhook + set secret   (done 2026-08-02, verified)
-[ ] 14. RevenueCat products + entitlement premium_access + keys
-[ ] 15. Re-add react-native-google-mobile-ads + AdMob app IDs + rewarded unit IDs
-[ ] 16. Enable Google/Apple providers, or remove the buttons
-[ ] 17. Persist the Settings notification toggles to profiles
-[ ] 18. Subscription edit flow
-[ ] 19. Implement or remove Account details / Categories / Backup & restore
-[ ] 20. Add component tests (only pure logic is covered today)
-[ ] 21. CI: typecheck + test + db:check on push
-```
+With no AdMob app ID configured, the config plugin was omitted but the npm package
+stayed in `dependencies`, so autolinking compiled the native SDK anyway with a
+blank `APPLICATION_ID`. `installContentProviders` runs inside
+`handleBindApplication`, **before `Application.onCreate()`** — which is why no JS
+ran and why it reproduced with Metro stopped.
+
+**Fixed** by removing the package (`ffb023a`). Verified: rebuilt dev client
+launches, reaches `.MainActivity`, and runs JS. `MobileAdsInitProvider` and
+`gms.ads` are provably **absent from the production AAB**.
 
 ---
 
-## 23. Testing status
+## 12. RevenueCat
 
-**`npm test` → 62 pass / 0 fail / 12 suites.** Node's built-in runner with native
-TS stripping; no Jest, no ts-node. `tsconfig` sets
-`allowImportingTsExtensions` because the runner needs explicit `.ts` on relative
-imports.
+**Code: complete. Android SDK: configured and verified. Store side: not started.**
+
+- `src/services/purchases.ts` wraps the SDK behind a lazy `require()`.
+- Entitlement id **`premium_access`**, offering id **`default`**. Both are
+  hardcoded in three places (`MONETIZATION`, `usePremium.ts`, the webhook) — a
+  rename must touch all three.
+- The **Supabase user id is the RevenueCat App User ID**, which is what makes the
+  webhook's `.eq('id', event.app_user_id)` mapping work. Verified in SDK logs.
+- `usePremium().isPremium` is the single gate every monetization decision reads.
+- Restore returns a discriminated `RestoreOutcome`
+  (`restored`/`none`/`unavailable`/`error`), shared by the paywall and Profile via
+  `restoreAlert()`.
+
+**Verified on device:** SDK 8.24.0 initialises, billing client connects,
+`CustomerInfo` fetched. **Restore Purchases exercised by tapping the real button**
+— SDK logged `restorePurchases has been called` → `No purchases found to restore`,
+app showed `paywall.restoreNone`. It correctly returns `none`, not `unavailable`.
+
+**Webhook verified** by driving the deployed function with synthetic events:
+no auth → 401, wrong secret → 401, unrelated entitlement → `ignored`,
+`INITIAL_PURCHASE` → `plan_tier free→premium`, `is_premium()` true,
+`item_allowance()` 4→2147483647, only the targeted user changed. A rolled-back
+transaction proved premium bypasses `enforce_item_quota` (12 items accepted).
+`CANCELLATION`/`EXPIRATION` restored the row exactly.
+
+**Webhook config for the RevenueCat dashboard:**
+```
+URL:    https://baxlbbuxwajlzgdvpykw.supabase.co/functions/v1/revenuecat-webhook
+Header: Authorization: Bearer <REVENUECAT_WEBHOOK_SECRET>
+```
+The secret is a Supabase secret; rotate with `supabase secrets set`.
+
+**Blocked on store products.** RevenueCat's own words from the device:
+> "There are no products registered in the RevenueCat dashboard for your offerings."
+
+Until a Play subscription is mapped to offering `default`,
+`getMonthlyPackage()` returns nulls and the paywall shows the static `SAR 10`.
+
+⚠️ **Known race, unaddressed:** after purchase the client flips to premium
+instantly, but `profiles` only updates when the webhook lands. A 6th item added in
+that window can still be rejected. Fixing it means touching quota logic.
+
+---
+
+## 13. AdMob — removed
+
+`react-native-google-mobile-ads` is **not installed**. It caused the launch crash
+(§11). `src/services/ads.ts` is retained and dormant: the lazy `require()` degrades
+to `unavailable`, so the rewarded path fails safe.
+
+**To re-enable:** `npx expo install react-native-google-mobile-ads`, set
+`EXPO_PUBLIC_ADMOB_{IOS,ANDROID}_APP_ID` to **real** IDs, restore the plugin block
+and both `config.googleMobileAdsAppId` entries in `app.config.ts`, and revert the
+structural `AdsModule` type to `typeof import('react-native-google-mobile-ads')`.
+
+⚠️ **Do not re-add it blank.** That is exactly what crashed the app.
+⚠️ Re-adding it also **falsifies the privacy policy**, which currently states the
+app contains no advertising SDKs. Update both in the same change.
+
+---
+
+## 14. Google Play / release status
+
+**A signed production AAB exists:**
+```
+dist\vaultly-0.1.0-vc7.aab      (68.37 MB, gitignored)
+```
+EAS build `523f6dbc-cac4-459b-bb32-91e303702abd`, commit `7281c24`,
+versionCode **7**, profile `production`, distribution `store`.
+
+**Verified against Play requirements:**
+
+| Requirement | Result |
+|---|---|
+| 64-bit | ✅ `arm64-v8a` present (+ armeabi-v7a, x86, x86_64) |
+| Release signing | ✅ `jar verified`, 2048-bit RSA, valid to **2053-12-17** |
+| Not debug-signed | ✅ cert is not `CN=Android Debug` |
+| No debug config | ✅ no `debuggable`, no `testOnly`, no cleartext, no DevLauncher |
+| Identity | ✅ `com.adialfaifi.vaultly`, `MainActivity` |
+
+Signed with the EAS-managed keystore **`efWNIp19gc`** (the same key that signed
+the dev build). `jarsigner` warnings about self-signing and no timestamp are
+normal for Android.
+
+### The release-build trap — read before you touch `locales`
+
+Every production build failed until `7281c24`:
+```
+Execution failed for task ':app:lintVitalRelease'
+values-b+ar/strings.xml:2: "CFBundleDisplayName" is translated here
+  but not found in default locale [ExtraTranslation]   ×15
+```
+`locales` in `app.config.ts` is **top-level** — the Expo schema has no
+`ios.locales` — so iOS Info.plist keys land in Android
+`values-b+<locale>/strings.xml`. 3 keys × 5 locales = 15. **`lintVital` runs only
+on release**, which is why development builds always passed.
+
+Fixed by `plugins/withAndroidDefaultLocaleStrings.js`, which gives the default
+locale an entry for each key, rather than disabling the check.
+
+**Not done:** no Play Console listing, no store products, no upload. Note that
+versionCode 6 was consumed by a failed build — `autoIncrement` bumps regardless.
+
+⚠️ **If Play App Signing is already enrolled for `com.adialfaifi.vaultly` with a
+different key, this AAB will be rejected.** First upload of a new app: fine.
+
+### Privacy policy
+
+`docs/privacy.html` — responsive, light/dark, self-contained, with
+`.github/workflows/pages.yml` and `docs/.nojekyll`.
+
+Every claim was checked against the code: no analytics/tracking/ad SDKs (verified
+by dependency scan), sub-processors are exactly Supabase/OpenAI/RevenueCat/Google
+Play/Expo/Google Sign-In, the security section describes real mechanisms, and the
+deletion section matches what `delete-account` actually does.
+
+**Not published.** Blocked on the git push. Five placeholders must be filled
+before publishing: legal entity name (×2), registered address (×2), minimum age.
+They match the `LEGAL_ENTITY` placeholder in `src/content/support.ts`.
+**It needs review by a qualified lawyer.**
+
+---
+
+## 15. Storage, notifications, localization, UI
+
+**Storage:** bucket `receipts`, private, 10 MB, MIME allow-list. Objects keyed
+`<user_id>/<timestamp>-<rand>.<ext>`; four RLS policies scope every operation to a
+folder matching `auth.uid()`. Reads go through short-lived signed URLs (1h).
+`src/services/storage.ts` uses the SDK 54 `File` API (`File.bytes()` →
+`Uint8Array`); the old `readAsStringAsync`/`EncodingType` API is gone.
+
+**Notifications:** local only. Warranties **30/7/1** days before `expires_on`;
+subscriptions **3/1** days before `next_renewal`. Identifiers derived
+(`warranty:<itemId>:<days>`) so re-scheduling is idempotent. Fired 09:00 local.
+Scheduled from `services/receipts.ts` in **both** backends. Push needs
+`EAS_PROJECT_ID` and does not work in Expo Go. SDK 54: `setNotificationHandler`
+needs `shouldShowBanner` + `shouldShowList`; triggers need
+`{type: SchedulableTriggerInputTypes.DATE, date}`.
+
+**Localization:** five locales — en, ar, es, fr, de. `compatibilityJSON: 'v3'` is
+**required**. **Arabic needs all six CLDR plural forms** (`_0`…`_5`); a missing
+form makes i18next fall back to the base key and **this shipped a real bug once**
+(a 6-month warranty chip labelled "one month"). **RTL rule: logical properties
+only** (`paddingStart`, `marginEnd`, `start`/`end`); `useDirection()` covers icon
+mirroring and transforms. Long-form prose lives in `src/content/support.ts`,
+**en + ar only**.
+
+**UI:** design source `../Vaultly Screens.dc.html`, iteration **t4**. Tokens in
+`src/theme/`: bg `#FAFAF8`, surface `#FFF`, border `#E7E5E0`, text `#14161A`,
+muted `#6B7280`, navy `#1B2A4A`, gold `#C8A548`. Three-slot bottom bar:
+**Home · FAB · Profile** (the FAB is not a tab; a spacer tab reserves its slot).
+22 routes. Arabic runs 1–2px larger via `typeScale(locale)`.
+
+---
+
+## 16. Testing
+
+**`npm test` → 110 pass / 0 fail / 23 suites.** Node's built-in runner with native
+TS stripping — no Jest, no ts-node. Tests must avoid `@/` aliases and import with
+explicit `.ts` extensions.
+
+```
+node --test "src/**/*.test.ts" "supabase/functions/**/*.test.ts"
+```
 
 | File | Covers |
 |---|---|
-| `src/lib/dateMath.test.ts` | 1/3/6/12/24-month terms; custom days/months/years; exact dates; leap years incl. 1900/2000/2100; end-of-month clamping; non-compounding clamps; billing cycles; DST boundaries; negatives; invalid input |
-| `src/i18n/plurals.test.ts` | Arabic six-form plurals across all five locales; the specific 6-months-≠-"one month" regression |
-
-**Integration / live scripts:**
+| `src/lib/dateMath.test.ts` | month terms, leap years, end-of-month clamping, billing cycles, DST |
+| `src/i18n/plurals.test.ts` | Arabic six-form plurals across five locales |
+| `src/lib/subscriptionRenewal.test.ts` | 48h renewal window, rollover, grace formatting |
+| `supabase/functions/analyze-receipt/pipeline.test.ts` | **34 tests** — the OCR rules |
 
 | Script | Status |
 |---|---|
-| `npm run db:check` | ✅ 10/10 — auth, 5 tables, 2 RPCs, bucket, anon-write rejection |
-| `npm run fn:check` | ✅ 4/4 — deployed, CORS, method guard, auth guard |
-| `npm run db:smoke -- --yes` | ⛔ **blocked** — refuses to run while confirmation is on |
+| `npm run db:check` | ✅ 10/10 |
+| `npm run fn:check` | ✅ 4/4 (covers `analyze-receipt` only) |
+| `npm run db:smoke -- --yes` | ⛔ blocked while email confirmation is on |
 
-`db:smoke` (written, never executed) covers: signup → profile trigger → insert
-item + warranty → the exact embedded join the lists use → `item_allowance` →
-quota trigger rejecting the 5th item → RLS isolation between two users → storage
-upload + signed URL + cross-user rejection → **real OCR against
-`scripts/fixtures/sample-receipt.png`**, a legible synthetic Jarir receipt with
-known values (`TOTAL: 2,499.00 SAR`, 24-month warranty) so extraction can be
-checked against truth rather than "it returned something".
-
-It has a **pre-flight guard**: if `mailer_autoconfirm !== true` it exits without
-creating anything, because a successful signup would email a confirmation link to
-an invented address. Do not weaken that guard; toggle the setting instead.
-Default email domain is `gmail.com` (Supabase rejects `example.com`); override
-with `--domain=`.
-
-**No coverage:** React components, navigation, RTL rendering, the Edge Function's
-body-validation branches.
+**No coverage:** React components, navigation, RTL rendering. `pipeline.ts` is
+excluded from the app `tsconfig` (that dir is Deno); typecheck it standalone:
+```
+npx tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext \
+  --moduleResolution bundler --allowImportingTsExtensions \
+  supabase/functions/analyze-receipt/pipeline.ts
+```
 
 ---
 
-## 24. Important implementation decisions
+## 17. Known bugs and open issues
 
-**Keep expo-router, not bare React Navigation.** It *is* React Navigation 7
-underneath. File-based routing is load-bearing across 21 routes.
-
-**No NativeWind.** Styling is the `src/theme` token set applied inline. Adding a
-styling system now would mean touching every screen.
-
-**TypeScript must stay ≥5.4.** react-query 5.6+ uses `NoInfer<T>`, a TS 5.4
-built-in. On 5.3 it fails to resolve and **every `useQuery` result silently
-becomes `any`** — no error, just no type safety in the entire data layer. Expo
-will warn that it expects ~5.3.3. Ignore the warning.
-
-**`react-dom` pinned to 19.1.0 via `overrides`.** It arrives transitively and
-floats to a version demanding a newer React than SDK 54 pins, which blocks every
-`npm install`.
-
-**Always `npx expo install`, never plain `npm install`, for Expo packages.** Plain
-npm grabs *latest*: it installed `expo-font@57` and `babel-preset-expo@57` where
-SDK 54 wants 14 and 54.
-
-**`--use-api` on function deploys.** Docker is not installed; the default deploy
-path requires it.
-
-**Mock quota starts at 3/4, decoupled from the seeded rows.** The seed fills
-every list so all card states are visible; counting those rows would open at 8/4
-and the paywall would block the add flow before it could be tried. This way the
-quota banner → one working add → paywall gate are reachable in sequence.
-
-**Mock seed dates are relative offsets from today**, not fixed dates, so
-"Expires today" / "16 days left" / "Renews in 3 days" keep reading correctly
-however long the seed sits there.
-
-**Native modules are lazily `require()`d.** `react-native-purchases` and
-`react-native-google-mobile-ads` do not exist in Expo Go; a top-level import
-crashes the bundle before the first screen renders.
-
-**`Field` lives in `src/components/`, not a route file.** Four routes were
-importing a shared component from `app/(auth)/sign-in.tsx`.
-
-**Validation runs client-side even when the server already did it.** The screens'
-contract is `normalise()`. Never trust a model's JSON straight into Postgres.
-
-**Verification method matters — two false results happened here:**
-- `select(…, {head: true})` sends HTTP HEAD, returns no body, and supabase-js
-  reports no error, so a **missing table looks identical to an empty one**. It
-  reported all five tables present when none existed. Use plain GET.
-- Listing storage buckets with the anon key returns `[]` whether or not the
-  bucket exists. Probe with a deliberately-disallowed upload instead.
-
----
-
-## 25. How to run
-
-```bash
-cd "C:\Users\عدي\OneDrive\سطح المكتب\تطبيق 1\Vaultly Digital Vault Setup\vaultly"
-npm install
-npx expo start --tunnel        # or --lan
-```
-
-**No dev server is currently running** — the previous background tasks were
-stopped.
-
-**LAN mode needs the IP pinned.** This machine has two VMware adapters that Expo
-picks ahead of the real Wi-Fi interface, producing a QR the phone cannot reach:
-
-```powershell
-$env:REACT_NATIVE_PACKAGER_HOSTNAME = "192.168.0.163"   # DHCP — re-check
-npx expo start --lan
-```
-
-Tunnel mode needs no IP. Its URL was `exp://jnugyjm-anonymous-8081.exp.direct`
-— the subdomain is derived from the project path and account, so it is stable for
-this checkout but differs per machine.
-
-Piping Expo's output to a file suppresses the QR code. To recover the tunnel URL:
-`curl http://127.0.0.1:4040/api/tunnels`. To generate a QR:
-`npx --yes qrcode --output qr.png "exp://<host>"`.
-
-**Verify a bundle actually compiles** (Metro only bundles on request):
-
-```
-http://localhost:8081/node_modules/expo-router/entry.bundle?platform=android&dev=true
-```
-
-Note the entry path — this is an expo-router project, so `/index.bundle` 404s.
-
----
-
-## 26. Production readiness checklist
-
-| Area | Status | Blocker |
+| Issue | Severity | Notes |
 |---|---|---|
-| Screens & navigation | ✅ Ready | — |
-| RTL / localization | ✅ Ready | Long-form prose is en+ar only |
-| Type safety | ✅ Clean | — |
-| Unit tests | ✅ 62 pass | Pure logic only |
-| Database schema | ✅ Applied & verified | — |
-| RLS | ✅ Verified anonymously | Not verified user-vs-user |
-| Secret handling | ✅ Verified absent from bundle | — |
-| Edge Function | ✅ Deployed, guards pass | OCR never executed |
-| Auth (email) | ⚠️ Implemented | Never completed end-to-end |
-| Auth (Google/Apple) | ❌ Not configured | Providers disabled |
-| Storage | ✅ Configured | Upload never executed |
-| Notifications (local) | ⚠️ Implemented | Not observed firing |
-| Notifications (push) | ❌ Blocked | Needs EAS_PROJECT_ID + dev build |
-| RevenueCat — code + webhook | ✅ Done & verified | — |
-| RevenueCat — Android SDK | ✅ Configured & verified | — |
-| RevenueCat — iOS SDK | ⏸ Deferred | No iOS app yet; key only |
-| RevenueCat — store products | ❌ Not started | Play Console subscription + offering mapping |
-| Free storage model (§8a) | ✅ Live & verified | Ad itself blocked on AdMob |
-| AdMob | ❌ Package removed | Re-add pkg + real app IDs; server side is done |
-| Legal content | ⚠️ Drafted | Placeholder + needs review |
-| Assets | ⚠️ Placeholder icon | — |
-| Version control | ❌ **None** | `git init` |
-| CI | ❌ None | — |
-| Crash reporting / analytics | ❌ None | Not started |
+| **`profiles.locale` CHECK allows only `('en','ar')`** | 🟠 High | **Verified live 2026-08-03.** App ships 5 locales; switching to es/fr/de raises 23514 and **fails silently** (`void`-ed update). Fix is `migrations/0004_profile_prefs.sql` — **not applied** |
+| **`0004` not applied** | 🟠 High | Live `profiles` has no `warranty_reminders` / `renewal_reminders`. **`setup.sql` has drifted ahead of the database** — it already contains those columns |
+| Settings notification toggles not persisted | 🟡 Medium | Depends on `0004` |
+| Email-change copy names only the new address | 🟡 Medium | Secure email change needs **both** links (§10) |
+| Nested components in `profile.tsx` | 🟡 Medium | `Divider`, `LinkRow`, `Row`, `Section` declared inside `Profile`. Latent until a `TextInput` is added there — this exact pattern caused a keyboard-dismiss bug in `account.tsx` |
+| `sign-in.tsx` collapses all OAuth errors | 🟡 Medium | Every failure shows `providerUnavailable`; `void oauth()` swallows throws |
+| Premium/webhook race | 🟡 Medium | §12 |
+| Subscriptions have no edit flow | 🟡 Medium | Schema, reminders and screens exist |
+| "Backup & restore" is a stub | 🟢 Low | No export exists; the privacy policy therefore points users to email for data copies |
+| Stray `public.تطبيق` table | 🟢 Low | Not in any migration. RLS on, inserts rejected. Pollutes generated types |
+| Progress bar uses `duration_months * 30` | 🟢 Low | Affects bar fill only, never the day count |
+| `eslint` has no config | 🟢 Low | `npm run lint` has never worked |
+| OneDrive sync races | 🟢 Low | Files can change mid-edit |
 
-**Honest overall assessment: not production-ready.** The app is
-feature-complete against the design and its infrastructure is verified, but
-**no authenticated user path has ever been executed end to end** — not signup,
-not a save to the real database, not an upload, not OCR. Those are all blocked
-behind one setting, and clearing that blocker is the single highest-value next
-action.
+**Fixed, recorded so they are not reintroduced:** Android launch crash
+(`MobileAdsInitProvider`); Google Sign-In (`createURL` triple slash); email change
+(stale `useURL` + unhandled `message`); release build (`lintVitalRelease`
+ExtraTranslation); Arabic plural fallback (a *translation* bug that presented as a
+date bug); `setMonth` month overflow; UTC/local drift; react-query typed as `any`
+on TS 5.3; missing `/auth-callback` route; auth gate unmounting the callback
+screen; `functions.invoke` having no `signal`; Restore Purchases discarding its
+result; Delete Account having no `onPress`.
 
 ---
 
-## 27. The one blocker
+## 18. Next priorities, in order
 
-`mailer_autoconfirm: false` and anonymous sign-in disabled ⇒ **no JWT can be
-obtained**, so nothing requiring an authenticated user can be tested.
-
-Do not "fix" this by disabling confirmation permanently — without it anyone can
-register with an address they do not own. The correct sequence:
-
-1. Supabase → Authentication → Providers → Email → turn **off** "Confirm email"
-2. `npm run db:smoke -- --yes`
-3. Turn "Confirm email" back **on**
-4. Separately, verify the deep link by signing up with a real address you own and
-   tapping the link on the same device
-
-Everything in §20 that is not explicitly store-related unblocks after step 2.
+1. **Push to GitHub** — `git push -u origin main` from your own terminal
+   (auth blocked for automation). Rename the repo to `vaultly` first; the current
+   name becomes a public URL in Play Console.
+2. **Enable GitHub Pages** — Settings → Pages → Source: GitHub Actions. Then the
+   policy URL is `https://oodbdh.github.io/<repo>/privacy.html`. Verify it returns
+   200 before pasting into Play Console. Private repos need a paid plan for Pages.
+3. **Apply `migrations/0004_profile_prefs.sql`** — fixes the live locale CHECK bug
+   and adds the notification-preference columns. Then `npm run db:types` and delete
+   `PendingProfileColumns` from `src/lib/database.types.ts` plus the `as never`
+   cast in `services/profile.ts`.
+4. **Scan one real receipt** — the five-stage pipeline has never processed a photo.
+   Highest-value untested path.
+5. **Fill the privacy-policy placeholders** and get legal review.
+6. **Play Console:** create the app, complete the Data safety form (it must match
+   the privacy policy — "no analytics, no ads" is currently true), upload the AAB.
+7. **Create the SAR 10/month subscription** in Play Console and map it to offering
+   `default` / entitlement `premium_access` in RevenueCat. Add the webhook URL and
+   secret in the RevenueCat dashboard. Then test a sandbox purchase and a restore.
+8. **Re-add AdMob** with real app IDs — and update the privacy policy in the same
+   change.
+9. Wire the Settings notification toggles to the `0004` columns.
+10. Fix the nested components in `profile.tsx` before anyone adds an input there.
+11. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
+    Still the only way to exercise authenticated paths end to end.
+12. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
 
 ---
 
-## 28. Context a new conversation needs
+## 19. Hard-won lessons — read this before debugging
 
-- The Arabic-labelled-chip bug is the best illustration of this codebase's main
-  hazard: **a translation defect presenting as a logic defect**. When something
-  numeric looks wrong in Arabic, check the plural forms before the arithmetic.
-- Verify claims against the live system; do not trust a passing check whose
-  method you have not examined. Two verification methods gave confidently wrong
-  answers here (§24).
-- The user's environment is Arabic-language Windows with PowerShell. Paths
-  contain Arabic characters; the Bash tool does **not** have Node on PATH —
-  use PowerShell with the PATH refresh line used throughout the runbook.
-- README.md is the operational runbook (setup, deploy commands, gotchas). This
-  file is the state snapshot. Keep both current.
-- Design source of truth is `../Vaultly Screens.dc.html`, iteration **t4**.
-  Do not redesign; the visual language is settled.
+- **Get the trace before forming a theory.** Every major bug this project has hit
+  turned out to be something other than the leading hypothesis. The launch crash
+  looked like RevenueCat, was AdMob. The email change looked like a refresh bug,
+  was two unrelated defects. Guessing cost more time than measuring, every time.
+- **`lintVital` runs only on release.** A green development build proves nothing
+  about a production build.
+- **Verification method matters.** `select(…, {head:true})` sends HTTP HEAD and
+  returns no body, so a *missing* table looks identical to an empty one. Listing
+  storage buckets with the anon key returns `[]` either way. Both produced
+  confidently wrong answers here.
+- **Check your tools exist.** `strings` is not installed on this machine; a
+  pipeline using it silently returned 0 matches and nearly produced a false
+  "no session stored" finding. `unzip` is absent too (use .NET `ZipFile`).
+- **`Linking.useURL()` cannot be trusted for deep links** while the app is
+  running. Use expo-router route params.
+- **Supabase does not validate `redirect_to` at `/authorize`** — it echoes
+  anything. Validation happens at `/callback`, where a rejected value **silently**
+  falls back to Site URL.
+- **Fast Refresh can serve stale modules.** After structural changes, fully close
+  the app and relaunch.
+- **When something numeric looks wrong in Arabic, check the plural forms before
+  the arithmetic.**
+- **The two nested project folders** (§1).

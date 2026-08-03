@@ -15,9 +15,17 @@ not be verified, it says so explicitly rather than guessing.
 >   JS. §14 has the trace and the verification.
 > - Next action is **§20 step 2** (Google OAuth in the dev build).
 
-**Read this first, then `PROJECT_STATE.md`.** This file is newer and supersedes
-it wherever the two disagree (`PROJECT_STATE.md` was last verified 2026-07-29
-and has drifted — see §16).
+> ⚠️ **SUPERSEDED — read `PROJECT_STATE.md` instead.**
+>
+> `PROJECT_STATE.md` was rewritten and verified on 2026-08-03 and is now the
+> single source of truth. This file is kept only for its bug post-mortems and the
+> detailed evidence behind the Android launch-crash investigation.
+>
+> Everything below describes the project as of **2026-08-02** and is stale in
+> several places: the launch crash, Google Sign-In and the email-change flow have
+> all since been fixed and verified; the OCR path is now a five-stage pipeline;
+> RevenueCat is configured for Android; and a signed production AAB exists.
+> Where the two files disagree, **`PROJECT_STATE.md` is correct.**
 
 ---
 
