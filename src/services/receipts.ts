@@ -9,7 +9,7 @@ import type {
   Warranty,
 } from '@/lib/database.types';
 import { QuotaExceededError } from '@/lib/errors';
-import type { ListItem } from '@/lib/types';
+import type { ListItem, ReminderKind, ReminderTarget } from '@/lib/types';
 import { addBillingCycle, todayISO } from '@/lib/dateMath';
 import {
   mockCreateItem,
@@ -18,6 +18,7 @@ import {
   mockFetchQuota,
   mockGetItem,
   mockListItems,
+  mockListReminderTargets,
   mockRenewSubscription,
   mockUpdateItem,
 } from '@/mocks/backend';
@@ -67,6 +68,107 @@ export async function listItems(userId: string, kind?: ItemKind): Promise<ListIt
       sub_period: subscriptions?.[0]?.period ?? null,
     };
   });
+}
+
+/**
+ * Every item that should currently hold a reminder of one kind, with the exact
+ * inputs the schedule functions take — including each row's own
+ * `reminder_days`, so re-scheduling restores what was there rather than
+ * flattening everything to the defaults.
+ */
+export async function listReminderTargets(
+  userId: string,
+  kind: ReminderKind,
+): Promise<ReminderTarget[]> {
+  if (USE_MOCK_DATA) return mockListReminderTargets(kind);
+
+  if (kind === 'warranty') {
+    // The merchant name lives on the item, not the warranty. Two flat queries
+    // rather than an embed: the join direction here is the one supabase-js
+    // types least predictably, and the row counts are small.
+    const [{ data: warranties, error }, { data: items, error: itemsError }] = await Promise.all([
+      supabase.from('warranties').select('item_id, expires_on, reminder_days').eq('user_id', userId),
+      supabase.from('vault_items').select('id, merchant_name').eq('user_id', userId),
+    ]);
+    if (error) throw error;
+    if (itemsError) throw itemsError;
+
+    const merchantById = new Map((items ?? []).map((i) => [i.id, i.merchant_name]));
+    return (warranties ?? []).flatMap<ReminderTarget>((w) => {
+      const merchant = merchantById.get(w.item_id);
+      // An orphan would have no name to put in the notification body.
+      if (!merchant) return [];
+      return [
+        {
+          kind: 'warranty',
+          itemId: w.item_id,
+          merchant,
+          expiresOn: w.expires_on,
+          reminderDays: w.reminder_days,
+        },
+      ];
+    });
+  }
+
+  const { data, error } = await supabase
+    .from('subscriptions')
+    .select('item_id, name, next_renewal, amount, currency, reminder_days')
+    .eq('user_id', userId);
+  if (error) throw error;
+
+  return (data ?? []).flatMap<ReminderTarget>((s) =>
+    // `subscriptions.item_id` is nullable; without one there is nothing to key
+    // the reminder on.
+    s.item_id
+      ? [
+          {
+            kind: 'renewal',
+            itemId: s.item_id,
+            name: s.name,
+            nextRenewal: s.next_renewal,
+            amountLabel: `${s.amount} ${s.currency}`,
+            reminderDays: s.reminder_days,
+          },
+        ]
+      : [],
+  );
+}
+
+/**
+ * Re-schedule one kind of reminder across the whole vault.
+ *
+ * This is what makes switching a toggle back on restore reminders for items
+ * that already existed, instead of only for ones touched afterwards. The
+ * schedule functions consult the preference themselves and return `[]` while it
+ * is off, so the caller must persist `true` *before* calling this.
+ *
+ * Returns the number of individual reminders scheduled — items whose date has
+ * already passed contribute none.
+ */
+export async function rescheduleReminders(userId: string, kind: ReminderKind): Promise<number> {
+  const targets = await listReminderTargets(userId, kind);
+  let scheduled = 0;
+
+  for (const target of targets) {
+    const ids =
+      target.kind === 'warranty'
+        ? await scheduleWarrantyReminders({
+            itemId: target.itemId,
+            merchant: target.merchant,
+            expiresOn: target.expiresOn,
+            reminderDays: target.reminderDays,
+          })
+        : await scheduleRenewalReminders({
+            subscriptionId: target.itemId,
+            name: target.name,
+            nextRenewal: target.nextRenewal,
+            amountLabel: target.amountLabel,
+            reminderDays: target.reminderDays,
+          });
+    scheduled += ids.length;
+  }
+
+  return scheduled;
 }
 
 export async function getItem(

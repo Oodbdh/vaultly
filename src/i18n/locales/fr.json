@@ -235,6 +235,7 @@
     "notifications": "Notifications",
     "warrantyReminders": "Rappels de garantie",
     "renewalReminders": "Rappels de renouvellement",
+    "remindersSaveFailed": "Enregistrement impossible. Vérifiez votre connexion et réessayez.",
     "subscriptionSection": "Abonnement",
     "managePlan": "Gérer l'offre",
     "planFree": "Gratuit",

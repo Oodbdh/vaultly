@@ -235,6 +235,7 @@
     "notifications": "Benachrichtigungen",
     "warrantyReminders": "Garantie-Erinnerungen",
     "renewalReminders": "Verlängerungs-Erinnerungen",
+    "remindersSaveFailed": "Konnte nicht gespeichert werden. Prüfe deine Verbindung und versuche es erneut.",
     "subscriptionSection": "Abo",
     "managePlan": "Tarif verwalten",
     "planFree": "Kostenlos",

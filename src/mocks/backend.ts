@@ -22,7 +22,7 @@ import type {
   Warranty,
 } from '@/lib/database.types';
 import { QuotaExceededError } from '@/lib/errors';
-import type { ListItem } from '@/lib/types';
+import type { ListItem, ReminderKind, ReminderTarget } from '@/lib/types';
 import { buildSeed, isoDay, MOCK_USER_ID, mockProfile, type MockTables } from './seed';
 
 let db: MockTables = buildSeed();
@@ -133,6 +133,49 @@ export function mockGetItem(
 
 export function mockFetchQuota(): Promise<{ used: number; allowance: number }> {
   return settle({ used: quotaUsed, allowance: allowance() });
+}
+
+/**
+ * Everything needed to re-schedule one kind of reminder for every item that has
+ * one. Mirrors `listReminderTargets` in `services/receipts.ts`, including the
+ * detail that a renewal reminder is keyed by the *item* id, not the
+ * subscription row's id.
+ */
+export function mockListReminderTargets(kind: ReminderKind): Promise<ReminderTarget[]> {
+  if (kind === 'warranty') {
+    return settle(
+      db.warranties.flatMap<ReminderTarget>((w) => {
+        const item = db.items.find((i) => i.id === w.item_id);
+        if (!item) return [];
+        return [
+          {
+            kind: 'warranty',
+            itemId: w.item_id,
+            merchant: item.merchant_name,
+            expiresOn: w.expires_on,
+            reminderDays: w.reminder_days,
+          },
+        ];
+      }),
+    );
+  }
+
+  return settle(
+    db.subscriptions.flatMap<ReminderTarget>((s) =>
+      s.item_id
+        ? [
+            {
+              kind: 'renewal',
+              itemId: s.item_id,
+              name: s.name,
+              nextRenewal: s.next_renewal,
+              amountLabel: `${s.amount} ${s.currency}`,
+              reminderDays: s.reminder_days,
+            },
+          ]
+        : [],
+    ),
+  );
 }
 
 // ── Writes ──────────────────────────────────────────────────────────────────

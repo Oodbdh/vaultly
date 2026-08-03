@@ -235,6 +235,7 @@
     "notifications": "Notifications",
     "warrantyReminders": "Warranty reminders",
     "renewalReminders": "Renewal reminders",
+    "remindersSaveFailed": "Could not save that. Check your connection and try again.",
     "subscriptionSection": "Subscription",
     "managePlan": "Manage plan",
     "planFree": "Free",

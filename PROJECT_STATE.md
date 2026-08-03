@@ -14,7 +14,7 @@ the two disagree, **this file is correct**.
 Vaultly is an Expo SDK 54 / React Native 0.81 Android app that stores receipts,
 warranties and subscriptions and warns you before something lapses.
 
-**State:** feature-complete against the design, type-clean, 110 tests passing, a
+**State:** feature-complete against the design, type-clean, 119 tests passing, a
 **signed production AAB exists**, and the three blocking bugs that dominated
 development (launch crash, Google Sign-In, email change) are **all fixed and
 verified on a real device**.
@@ -32,7 +32,7 @@ remote.
 | Gate | Command | Result |
 |---|---|---|
 | Types | `npx tsc --noEmit` | **clean** |
-| Tests | `npm test` | **110 pass / 0 fail, 23 suites** |
+| Tests | `npm test` | **119 pass / 0 fail, 27 suites** |
 | Database | `npm run db:check` | **10/10 PASS** |
 | Edge Function | `npm run fn:check` | **4/4 PASS** |
 | Production AAB | EAS `523f6dbc` | **finished, signed** |
@@ -634,12 +634,34 @@ folder matching `auth.uid()`. Reads go through short-lived signed URLs (1h).
 `Uint8Array`); the old `readAsStringAsync`/`EncodingType` API is gone.
 
 **Notifications:** local only. Warranties **30/7/1** days before `expires_on`;
-subscriptions **3/1** days before `next_renewal`. Identifiers derived
-(`warranty:<itemId>:<days>`) so re-scheduling is idempotent. Fired 09:00 local.
-Scheduled from `services/receipts.ts` in **both** backends. Push needs
-`EAS_PROJECT_ID` and does not work in Expo Go. SDK 54: `setNotificationHandler`
-needs `shouldShowBanner` + `shouldShowList`; triggers need
+subscriptions **3/1** days before `next_renewal`. Fired 09:00 local. Scheduled
+from `services/receipts.ts` in **both** backends. Push needs `EAS_PROJECT_ID`
+and does not work in Expo Go. SDK 54: `setNotificationHandler` needs
+`shouldShowBanner` + `shouldShowList`; triggers need
 `{type: SchedulableTriggerInputTypes.DATE, date}`.
+
+Identifiers are derived — `<kind>:<itemId>:<days>` — which is what makes
+re-scheduling idempotent. The format now lives in `src/lib/reminderIds.ts`,
+pure and with **9 tests**, because four operations depend on parsing it back:
+schedule, cancel one item, cancel one kind, re-schedule one kind. ⚠️ **The
+`<itemId>` is the vault item's id for both kinds**, including renewals, where
+the parameter is confusingly named `subscriptionId`. It is never the
+`subscriptions` row id. Match that or a re-schedule orphans what it meant to
+replace.
+
+**The Settings reminder toggles are live.** `profiles.warranty_reminders` /
+`renewal_reminders` are the stored truth; `authStore` mirrors them into
+`services/notifications` on every profile change (services must not read
+stores), and the schedule functions consult that mirror. `useReminderPreferences`
+persists first, then reconciles: switching off calls `cancelRemindersOfKind`,
+switching on calls `rescheduleReminders`, which walks the vault via
+`listReminderTargets` and restores each row's own `reminder_days`. Only the
+write can fail the toggle; the reconcile is best-effort, since any later write
+to an item re-derives its reminders anyway.
+
+⚠️ **The mirror defaults to on.** A schedule call that races the first profile
+load keeps its reminder rather than dropping it — losing a reminder is the
+expensive failure, an extra one is not.
 
 **Localization:** five locales — en, ar, es, fr, de. `compatibilityJSON: 'v3'` is
 **required**. **Arabic needs all six CLDR plural forms** (`_0`…`_5`); a missing
@@ -659,7 +681,7 @@ muted `#6B7280`, navy `#1B2A4A`, gold `#C8A548`. Three-slot bottom bar:
 
 ## 16. Testing
 
-**`npm test` → 110 pass / 0 fail / 23 suites.** Node's built-in runner with native
+**`npm test` → 119 pass / 0 fail / 27 suites.** Node's built-in runner with native
 TS stripping — no Jest, no ts-node. Tests must avoid `@/` aliases and import with
 explicit `.ts` extensions.
 
@@ -672,6 +694,7 @@ node --test "src/**/*.test.ts" "supabase/functions/**/*.test.ts"
 | `src/lib/dateMath.test.ts` | month terms, leap years, end-of-month clamping, billing cycles, DST |
 | `src/i18n/plurals.test.ts` | Arabic six-form plurals across five locales |
 | `src/lib/subscriptionRenewal.test.ts` | 48h renewal window, rollover, grace formatting |
+| `src/lib/reminderIds.test.ts` | **9 tests** — the reminder identifier scheme: round-trip, per-item vs per-kind matching, and that unrecognised identifiers are never claimed |
 | `supabase/functions/analyze-receipt/pipeline.test.ts` | **34 tests** — the OCR rules |
 
 | Script | Status |
@@ -694,7 +717,6 @@ npx tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext \
 
 | Issue | Severity | Notes |
 |---|---|---|
-| Settings notification toggles not persisted | 🟡 Medium | `warranty_reminders` / `renewal_reminders` now exist live (§6), but the toggles are still local `useState` and nothing reads or writes them |
 | Email-change copy names only the new address | 🟡 Medium | Secure email change needs **both** links (§10) |
 | `sign-in.tsx` collapses all OAuth errors | 🟡 Medium | Every failure shows `providerUnavailable`; `void oauth()` swallows throws |
 | Premium/webhook race | 🟡 Medium | §12 |
@@ -738,12 +760,9 @@ result; Delete Account having no `onPress`.
    secret in the RevenueCat dashboard. Then test a sandbox purchase and a restore.
 7. **Re-add AdMob** with real app IDs — and update the privacy policy in the same
    change.
-8. Wire the Settings notification toggles to `profiles.warranty_reminders` /
-   `renewal_reminders`. The columns, the generated types and `ProfileUpdate` are
-   all in place — only the screen and a `useProfile`-style write are missing.
-9. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
+8. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
    Still the only way to exercise authenticated paths end to end.
-10. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
+9. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
 
 **Done since this list was written**, both on 2026-08-03:
 
@@ -754,6 +773,7 @@ result; Delete Account having no `onPress`.
   to module scope, matching the fix already made in `account.tsx`. Verified by
   requesting the Android bundle from Metro (HTTP 200) as well as `tsc`, since
   the suite has no component coverage.
+- The Settings reminder toggles wired end to end — see §15.
 
 ---
 

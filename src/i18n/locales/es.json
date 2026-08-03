@@ -235,6 +235,7 @@
     "notifications": "Notificaciones",
     "warrantyReminders": "Avisos de garantía",
     "renewalReminders": "Avisos de renovación",
+    "remindersSaveFailed": "No se pudo guardar. Comprueba tu conexión e inténtalo de nuevo.",
     "subscriptionSection": "Suscripción",
     "managePlan": "Gestionar plan",
     "planFree": "Gratis",

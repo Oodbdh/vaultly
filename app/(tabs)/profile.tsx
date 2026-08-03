@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Alert, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -11,6 +10,8 @@ import { RewardedSlotCard } from '@/components/RewardedSlotCard';
 import { colors, radius, spacing, typeScale } from '@/theme';
 import { useDirection } from '@/i18n/rtl';
 import { useLanguage } from '@/hooks/useLanguage';
+import { useReminderPreferences } from '@/hooks/useReminderPreferences';
+import type { ReminderKind } from '@/lib/types';
 import { useAuthStore } from '@/store/authStore';
 import { usePremium } from '@/hooks/usePremium';
 import { restoreAlert, usePaywall } from '@/hooks/usePaywall';
@@ -34,8 +35,13 @@ export default function Profile() {
   const { isPremium } = usePremium();
   const { restore } = usePaywall();
   const lang = useLanguage();
-  const [warrantyReminders, setWarrantyReminders] = useState(true);
-  const [renewalReminders, setRenewalReminders] = useState(true);
+  const reminders = useReminderPreferences();
+
+  /** The row keeps its old position unless the write actually landed. */
+  async function setReminder(kind: ReminderKind, next: boolean) {
+    const ok = await reminders.toggle(kind, next);
+    if (!ok) Alert.alert(t('settings.notifications'), t('settings.remindersSaveFailed'));
+  }
 
   /**
    * Restore, then say what happened. The result used to be discarded, so the
@@ -166,11 +172,19 @@ export default function Profile() {
           </Pressable>
           <Divider />
           <Row label={t('settings.warrantyReminders')} icon="notifications-outline">
-            <Switch value={warrantyReminders} onValueChange={setWarrantyReminders} />
+            <Switch
+              value={reminders.warranty}
+              disabled={reminders.pending !== null}
+              onValueChange={(next) => void setReminder('warranty', next)}
+            />
           </Row>
           <Divider />
           <Row label={t('settings.renewalReminders')} icon="repeat-outline">
-            <Switch value={renewalReminders} onValueChange={setRenewalReminders} />
+            <Switch
+              value={reminders.renewal}
+              disabled={reminders.pending !== null}
+              onValueChange={(next) => void setReminder('renewal', next)}
+            />
           </Row>
         </Section>
 

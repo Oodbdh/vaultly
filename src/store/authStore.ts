@@ -6,6 +6,7 @@ import { authRedirectTo } from '@/lib/authRedirect';
 import { supabase } from '@/lib/supabase';
 import type { Profile } from '@/lib/database.types';
 import { mockProfile, mockSession } from '@/mocks/auth';
+import { setReminderPreferences } from '@/services/notifications';
 import { fetchProfile } from '@/services/profile';
 import { configurePurchases, logOutPurchases } from '@/services/purchases';
 
@@ -58,13 +59,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setSession: (session) => set({ session, user: session?.user ?? null, initialising: false }),
 
-  setProfile: (profile) => set({ profile }),
+  setProfile: (profile) => set({ profile: mirrorReminderPrefs(profile) }),
 
   loadProfile: async () => {
     const userId = get().user?.id;
     if (!userId) return;
     const profile = await fetchProfile(userId);
-    if (profile) set({ profile });
+    if (profile) set({ profile: mirrorReminderPrefs(profile) });
   },
 
   signInWithEmail: async (email, password) => {
@@ -170,14 +171,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     set({ session: null, user: null, profile: null, initialising: false });
+    mirrorReminderPrefs(null);
   },
 }));
+
+/**
+ * Push the row's reminder preferences into `services/notifications`, which
+ * consults them before scheduling anything.
+ *
+ * The service holds them as module state rather than reaching into this store,
+ * so every path that sets `profile` has to hand them over — this is that hand
+ * off, and it returns the profile so it can wrap a `set` inline. A null profile
+ * (signed out) restores the defaults.
+ */
+function mirrorReminderPrefs<T extends Profile | null>(profile: T): T {
+  setReminderPreferences({
+    warranty: profile?.warranty_reminders ?? true,
+    renewal: profile?.renewal_reminders ?? true,
+  });
+  return profile;
+}
 
 function applyMockSession(): void {
   useAuthStore.setState({
     session: mockSession,
     user: mockSession.user,
-    profile: mockProfile,
+    profile: mirrorReminderPrefs(mockProfile),
     initialising: false,
   });
 }

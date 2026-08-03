@@ -271,6 +271,7 @@
     "notifications": "التنبيهات",
     "warrantyReminders": "تنبيهات الضمان",
     "renewalReminders": "تنبيهات التجديد",
+    "remindersSaveFailed": "تعذّر الحفظ. تحقق من اتصالك ثم أعد المحاولة.",
     "subscriptionSection": "الاشتراك",
     "managePlan": "إدارة الخطة",
     "planFree": "مجاني",
