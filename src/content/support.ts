@@ -30,8 +30,15 @@ export function contentLocale(locale: string): SupportLocale {
   return locale.startsWith('ar') ? 'ar' : 'en';
 }
 
-/** Filled into the documents so the operator name lives in exactly one place. */
-export const LEGAL_ENTITY = '[Vaultly — registered operator name]';
+/**
+ * Filled into the documents so the operator name lives in exactly one place.
+ *
+ * Vaultly is operated by an individual, not a company, so this is a personal
+ * legal name and it reads identically in the English and Arabic documents. If
+ * an Arabic form of the name is ever wanted for the `ar` locale, it has to come
+ * from the operator — transliterating a legal name is not ours to guess.
+ */
+export const LEGAL_ENTITY = 'Adi Mousa Alfaifi';
 export const LEGAL_JURISDICTION_EN = 'the Kingdom of Saudi Arabia';
 export const LEGAL_JURISDICTION_AR = 'المملكة العربية السعودية';
 export const LEGAL_UPDATED = '2026-07-29';
