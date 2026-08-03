@@ -93,10 +93,7 @@ export async function updateProfile(
 
   const { data, error } = await supabase
     .from('profiles')
-    // `patch` may carry columns added by migrations/0004 that are not in
-    // database.generated.ts until that migration is applied and `npm run
-    // db:types` is re-run. Drop this cast then.
-    .update(patch as never)
+    .update(patch)
     .eq('id', userId)
     .select()
     .single();

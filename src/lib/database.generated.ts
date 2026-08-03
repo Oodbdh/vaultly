@@ -45,7 +45,9 @@ export type Database = {
           plan_tier: Database["public"]["Enums"]["plan_tier"]
           premium_until: string | null
           push_token: string | null
+          renewal_reminders: boolean
           updated_at: string
+          warranty_reminders: boolean
         }
         Insert: {
           created_at?: string
@@ -56,7 +58,9 @@ export type Database = {
           plan_tier?: Database["public"]["Enums"]["plan_tier"]
           premium_until?: string | null
           push_token?: string | null
+          renewal_reminders?: boolean
           updated_at?: string
+          warranty_reminders?: boolean
         }
         Update: {
           created_at?: string
@@ -67,7 +71,9 @@ export type Database = {
           plan_tier?: Database["public"]["Enums"]["plan_tier"]
           premium_until?: string | null
           push_token?: string | null
+          renewal_reminders?: boolean
           updated_at?: string
+          warranty_reminders?: boolean
         }
         Relationships: []
       }

@@ -23,25 +23,10 @@ export type BillingPeriod = Enums['billing_period'];
 export type PlanTier = Enums['plan_tier'];
 export type OcrStatus = Enums['ocr_status'];
 
-/**
- * Columns added by `supabase/migrations/0004_profile_prefs.sql`.
- *
- * They are declared here rather than coming from the generated row because that
- * migration has not been applied to the linked project yet. Once it is:
- *   1. run `npm run db:types`
- *   2. delete this type and the two intersections below
- *   3. drop the `as never` cast in `services/profile.ts`
- * `Profile` then picks the columns up from Postgres, as everything else does.
- */
-type PendingProfileColumns = {
-  warranty_reminders: boolean;
-  renewal_reminders: boolean;
-};
-
-export type Profile = Tables['profiles']['Row'] & PendingProfileColumns;
+export type Profile = Tables['profiles']['Row'];
 export type VaultItem = Tables['vault_items']['Row'];
 export type Warranty = Tables['warranties']['Row'];
 export type Subscription = Tables['subscriptions']['Row'];
 export type BonusSlot = Tables['bonus_slots']['Row'];
 
-export type ProfileUpdate = Tables['profiles']['Update'] & Partial<PendingProfileColumns>;
+export type ProfileUpdate = Tables['profiles']['Update'];

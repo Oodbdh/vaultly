@@ -23,12 +23,11 @@ verified on a real device**.
 has been through the new OCR pipeline, and the repo has never been pushed to a
 remote.
 
-**Immediate next actions** — see §20 for the full ordered list:
+**Immediate next actions** — see §18 for the full ordered list:
 1. Push to GitHub and publish the privacy policy (blocked on your auth).
-2. Apply `supabase/migrations/0004_profile_prefs.sql` — a live bug (§18).
-3. Scan one real receipt to exercise the new pipeline (§11).
+2. Scan one real receipt to exercise the new pipeline (§8).
 
-**Verification gates, run 2026-08-03:**
+**Verification gates, re-run 2026-08-03 after applying `0004`:**
 
 | Gate | Command | Result |
 |---|---|---|
@@ -106,7 +105,9 @@ Note the entry path — this is expo-router; `/index.bundle` 404s.
 
 ## 2. Repository and git
 
-- Branch **`main`**, **16 commits**, working tree **clean**.
+- Branch **`main`**, working tree **clean**. `git log --oneline | wc -l` is the
+  authority on the count — the list below is only as current as the commit that
+  last edited this file, and cannot include that commit itself.
 - Remote `origin` is configured but **nothing has ever been pushed**:
   `https://github.com/Oodbdh/C-Users-OneDrive-1-Vaultly-Digital-Vault-Setup-vaultly-docs-privacy.html.git`
 - Push is blocked: `gh` is not installed and Git Credential Manager cannot prompt
@@ -127,6 +128,7 @@ Safe to publish.
 
 **Commit history:**
 ```
+c430631  rewrite PROJECT_STATE as a self-sufficient handoff
 9feeb04  privacy policy + GitHub Pages workflow
 7281c24  fix release build: Android default-locale strings (lint)
 b9c5100  five-stage OCR extraction pipeline
@@ -195,7 +197,7 @@ supabase/       setup.sql, migrations/, functions/
 | zustand | ^4.5.5 | |
 | i18next / react-i18next | ^23.15.1 / ^15.0.2 | `compatibilityJSON: 'v3'` |
 | react-native-purchases | ^8.2.2 | installed and **configured** (Android) |
-| ~~react-native-google-mobile-ads~~ | **removed** | §14 |
+| ~~react-native-google-mobile-ads~~ | **removed** | §13 |
 
 **TypeScript must stay ≥5.4.** react-query 5.6+ needs `NoInfer<T>`; on 5.3 every
 `useQuery` result silently becomes `any`. Expo warns it wants ~5.3.3. **Ignore.**
@@ -220,7 +222,7 @@ otherwise floats to a version demanding a newer React than SDK 54 pins.
 | `EXPO_PUBLIC_GEMINI_MODEL` | set (inert) |
 | `EXPO_PUBLIC_USE_MOCK_DATA` | empty ⇒ live database |
 | `EXPO_PUBLIC_AI_PROVIDER` | empty ⇒ `edge` |
-| `EXPO_PUBLIC_ADMOB_*` | empty (no longer read — §14) |
+| `EXPO_PUBLIC_ADMOB_*` | empty (no longer read — §13) |
 | `EAS_PROJECT_ID` | empty; hardcoded fallback in `app.config.ts` |
 
 **EAS environment variables** (all three environments: development, preview,
@@ -275,7 +277,19 @@ Not readable via the anon key: Site URL, the Redirect URL allow-list, and
 `warranties`, `subscriptions`, `bonus_slots`.
 
 **Live `profiles` columns:** `id, display_name, locale, currency, plan_tier,
-premium_until, push_token, created_at, updated_at`.
+premium_until, push_token, created_at, updated_at, warranty_reminders,
+renewal_reminders`.
+
+**All five migrations are applied.** `0004_profile_prefs.sql` went in 2026-08-03,
+which closed the last gap between `setup.sql` and the live database — the two no
+longer drift. `profiles_locale_check` now reads
+`locale in ('en','ar','es','fr','de')`; verified in a rolled-back transaction
+that all five are accepted and an unknown locale is still rejected.
+
+⚠️ Keep that CHECK in step with `SUPPORTED_LOCALES` in
+`src/constants/config.ts`. `handle_new_user` copies `raw_user_meta_data->>'locale'`
+into the row unvalidated, so a locale the CHECK does not know would fail signup
+at the trigger.
 
 **Functions:** `touch_updated_at`, `handle_new_user`, `is_premium(uuid)`,
 `item_allowance(uuid)`, `enforce_item_quota`.
@@ -334,7 +348,7 @@ without that the reward would be unreachable from the main path.
 **Verified live** in a rolled-back transaction: allowance 4→5, second grant
 blocked, 5 items accepted, 6th rejected with `VAULTLY_QUOTA_EXCEEDED`.
 
-⚠️ **The ad cannot actually run** — AdMob is removed (§14), so `showRewardedAd()`
+⚠️ **The ad cannot actually run** — AdMob is removed (§13), so `showRewardedAd()`
 returns `unavailable`. Walkable only in mock mode.
 
 ---
@@ -680,9 +694,7 @@ npx tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext \
 
 | Issue | Severity | Notes |
 |---|---|---|
-| **`profiles.locale` CHECK allows only `('en','ar')`** | 🟠 High | **Verified live 2026-08-03.** App ships 5 locales; switching to es/fr/de raises 23514 and **fails silently** (`void`-ed update). Fix is `migrations/0004_profile_prefs.sql` — **not applied** |
-| **`0004` not applied** | 🟠 High | Live `profiles` has no `warranty_reminders` / `renewal_reminders`. **`setup.sql` has drifted ahead of the database** — it already contains those columns |
-| Settings notification toggles not persisted | 🟡 Medium | Depends on `0004` |
+| Settings notification toggles not persisted | 🟡 Medium | `warranty_reminders` / `renewal_reminders` now exist live (§6), but the toggles are still local `useState` and nothing reads or writes them |
 | Email-change copy names only the new address | 🟡 Medium | Secure email change needs **both** links (§10) |
 | Nested components in `profile.tsx` | 🟡 Medium | `Divider`, `LinkRow`, `Row`, `Section` declared inside `Profile`. Latent until a `TextInput` is added there — this exact pattern caused a keyboard-dismiss bug in `account.tsx` |
 | `sign-in.tsx` collapses all OAuth errors | 🟡 Medium | Every failure shows `providerUnavailable`; `void oauth()` swallows throws |
@@ -694,7 +706,11 @@ npx tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext \
 | `eslint` has no config | 🟢 Low | `npm run lint` has never worked |
 | OneDrive sync races | 🟢 Low | Files can change mid-edit |
 
-**Fixed, recorded so they are not reintroduced:** Android launch crash
+**Fixed, recorded so they are not reintroduced:** the `profiles.locale` CHECK
+silently rejecting es/fr/de — `useSyncProfileLocale` was calling `supabase`
+directly with a `void`ed promise and an `as 'en' | 'ar'` cast, so the 23514 went
+nowhere; it now goes through `updateProfile`, which makes `services/profile.ts`'s
+"every write in one place" claim actually true; Android launch crash
 (`MobileAdsInitProvider`); Google Sign-In (`createURL` triple slash); email change
 (stale `useURL` + unhandled `message`); release build (`lintVitalRelease`
 ExtraTranslation); Arabic plural fallback (a *translation* bug that presented as a
@@ -713,25 +729,28 @@ result; Delete Account having no `onPress`.
 2. **Enable GitHub Pages** — Settings → Pages → Source: GitHub Actions. Then the
    policy URL is `https://oodbdh.github.io/<repo>/privacy.html`. Verify it returns
    200 before pasting into Play Console. Private repos need a paid plan for Pages.
-3. **Apply `migrations/0004_profile_prefs.sql`** — fixes the live locale CHECK bug
-   and adds the notification-preference columns. Then `npm run db:types` and delete
-   `PendingProfileColumns` from `src/lib/database.types.ts` plus the `as never`
-   cast in `services/profile.ts`.
-4. **Scan one real receipt** — the five-stage pipeline has never processed a photo.
+3. **Scan one real receipt** — the five-stage pipeline has never processed a photo.
    Highest-value untested path.
-5. **Fill the privacy-policy placeholders** and get legal review.
-6. **Play Console:** create the app, complete the Data safety form (it must match
+4. **Fill the privacy-policy placeholders** and get legal review.
+5. **Play Console:** create the app, complete the Data safety form (it must match
    the privacy policy — "no analytics, no ads" is currently true), upload the AAB.
-7. **Create the SAR 10/month subscription** in Play Console and map it to offering
+6. **Create the SAR 10/month subscription** in Play Console and map it to offering
    `default` / entitlement `premium_access` in RevenueCat. Add the webhook URL and
    secret in the RevenueCat dashboard. Then test a sandbox purchase and a restore.
-8. **Re-add AdMob** with real app IDs — and update the privacy policy in the same
+7. **Re-add AdMob** with real app IDs — and update the privacy policy in the same
    change.
-9. Wire the Settings notification toggles to the `0004` columns.
-10. Fix the nested components in `profile.tsx` before anyone adds an input there.
-11. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
+8. Wire the Settings notification toggles to `profiles.warranty_reminders` /
+   `renewal_reminders`. The columns, the generated types and `ProfileUpdate` are
+   all in place — only the screen and a `useProfile`-style write are missing.
+9. Fix the nested components in `profile.tsx` before anyone adds an input there.
+10. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
     Still the only way to exercise authenticated paths end to end.
-12. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
+11. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
+
+**Done since this list was written:** `migrations/0004_profile_prefs.sql` was
+applied to the linked project on 2026-08-03, types regenerated, and the two
+placeholders it required (`PendingProfileColumns`, the `as never` cast) deleted.
+See §6.
 
 ---
 
