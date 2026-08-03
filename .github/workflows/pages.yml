@@ -38,8 +38,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # `enablement` lets this workflow turn Pages on itself, using the token
+      # above, instead of the site having to be created by hand in Settings
+      # first. Without it the step fails with a bare 404 on a repo where Pages
+      # has never been enabled — which is exactly the state a fresh clone or a
+      # newly pushed repo is in.
+      #
+      # It cannot conjure entitlement: Pages is free only on **public** repos.
+      # On a private repo without GitHub Pro this step fails, and that is the
+      # honest place for it to fail.
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload docs/ as the Pages artifact
         uses: actions/upload-pages-artifact@v3
