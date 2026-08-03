@@ -696,7 +696,6 @@ npx tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext \
 |---|---|---|
 | Settings notification toggles not persisted | 🟡 Medium | `warranty_reminders` / `renewal_reminders` now exist live (§6), but the toggles are still local `useState` and nothing reads or writes them |
 | Email-change copy names only the new address | 🟡 Medium | Secure email change needs **both** links (§10) |
-| Nested components in `profile.tsx` | 🟡 Medium | `Divider`, `LinkRow`, `Row`, `Section` declared inside `Profile`. Latent until a `TextInput` is added there — this exact pattern caused a keyboard-dismiss bug in `account.tsx` |
 | `sign-in.tsx` collapses all OAuth errors | 🟡 Medium | Every failure shows `providerUnavailable`; `void oauth()` swallows throws |
 | Premium/webhook race | 🟡 Medium | §12 |
 | Subscriptions have no edit flow | 🟡 Medium | Schema, reminders and screens exist |
@@ -742,15 +741,19 @@ result; Delete Account having no `onPress`.
 8. Wire the Settings notification toggles to `profiles.warranty_reminders` /
    `renewal_reminders`. The columns, the generated types and `ProfileUpdate` are
    all in place — only the screen and a `useProfile`-style write are missing.
-9. Fix the nested components in `profile.tsx` before anyone adds an input there.
-10. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
-    Still the only way to exercise authenticated paths end to end.
-11. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
+9. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
+   Still the only way to exercise authenticated paths end to end.
+10. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
 
-**Done since this list was written:** `migrations/0004_profile_prefs.sql` was
-applied to the linked project on 2026-08-03, types regenerated, and the two
-placeholders it required (`PendingProfileColumns`, the `as never` cast) deleted.
-See §6.
+**Done since this list was written**, both on 2026-08-03:
+
+- `migrations/0004_profile_prefs.sql` applied to the linked project, types
+  regenerated, and the two placeholders it required (`PendingProfileColumns`,
+  the `as never` cast) deleted. See §6.
+- `Divider` / `LinkRow` / `Row` / `Section` in `app/(tabs)/profile.tsx` hoisted
+  to module scope, matching the fix already made in `account.tsx`. Verified by
+  requesting the Android bundle from Metro (HTTP 200) as well as `tsc`, since
+  the suite has no component coverage.
 
 ---
 

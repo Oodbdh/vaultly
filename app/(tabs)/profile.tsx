@@ -259,100 +259,122 @@ export default function Profile() {
       />
     </SafeAreaView>
   );
+}
 
-  function Divider() {
-    return <View style={{ height: 1, backgroundColor: colors.border }} />;
-  }
+/**
+ * The four presentational pieces below live at module scope on purpose.
+ *
+ * Declared inside `Profile` they were rebuilt on every render, and a new
+ * function identity is a *different component type* to React — so it unmounts
+ * and remounts the subtree instead of updating it. `account.tsx` hit the sharp
+ * end of this: the `TextInput` inside its card was destroyed on every keystroke,
+ * taking focus and the keyboard with it. Nothing here holds focus today, which
+ * is the only reason it was survivable; adding one input would have made it a
+ * bug. Hoisting keeps the identities stable.
+ *
+ * They read direction and type scale through `useDirection()` / `typeScale()`,
+ * exactly as the hoisted pieces in `account.tsx` do, so the rendered output is
+ * identical to what they produced as closures.
+ */
 
-  function LinkRow({
-    label,
-    hint,
-    icon,
-    onPress,
-    danger,
-  }: {
-    label: string;
-    hint?: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    onPress: () => void;
-    danger?: boolean;
-  }) {
-    return (
-      <Pressable
-        accessibilityRole="button"
-        onPress={onPress}
-        style={({ pressed }) => ({
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.md,
-          minHeight: 52,
-          opacity: pressed ? 0.6 : 1,
-        })}
-      >
-        <Ionicons name={icon} size={19} color={danger ? colors.danger : colors.primary} />
-        <View style={{ flex: 1, gap: 1 }}>
-          <Text style={[type.body, { color: danger ? colors.danger : colors.text, textAlign }]}>
-            {label}
+function Divider() {
+  return <View style={{ height: 1, backgroundColor: colors.border }} />;
+}
+
+function LinkRow({
+  label,
+  hint,
+  icon,
+  onPress,
+  danger,
+}: {
+  label: string;
+  hint?: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  danger?: boolean;
+}) {
+  const { locale, textAlign, flipIcon } = useDirection();
+  const type = typeScale(locale);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        minHeight: 52,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Ionicons name={icon} size={19} color={danger ? colors.danger : colors.primary} />
+      <View style={{ flex: 1, gap: 1 }}>
+        <Text style={[type.body, { color: danger ? colors.danger : colors.text, textAlign }]}>
+          {label}
+        </Text>
+        {hint ? (
+          <Text style={[type.caption, { color: colors.textMuted, textAlign }]} numberOfLines={1}>
+            {hint}
           </Text>
-          {hint ? (
-            <Text style={[type.caption, { color: colors.textMuted, textAlign }]} numberOfLines={1}>
-              {hint}
-            </Text>
-          ) : null}
-        </View>
-        <Ionicons name="chevron-forward" size={17} color={colors.border} style={flipIcon} />
-      </Pressable>
-    );
-  }
+        ) : null}
+      </View>
+      <Ionicons name="chevron-forward" size={17} color={colors.border} style={flipIcon} />
+    </Pressable>
+  );
+}
 
-  function Row({
-    label,
-    icon,
-    children,
-  }: {
-    label: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    children?: React.ReactNode;
-  }) {
-    return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 52 }}>
-        <Ionicons name={icon} size={19} color={colors.primary} />
-        <Text style={[type.body, { color: colors.text, flex: 1, textAlign }]}>{label}</Text>
+function Row({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  children?: React.ReactNode;
+}) {
+  const { locale, textAlign } = useDirection();
+  const type = typeScale(locale);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 52 }}>
+      <Ionicons name={icon} size={19} color={colors.primary} />
+      <Text style={[type.body, { color: colors.text, flex: 1, textAlign }]}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const { locale, textAlign } = useDirection();
+  const type = typeScale(locale);
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <Text
+        style={[
+          type.caption,
+          {
+            color: colors.textMuted,
+            textAlign,
+            textTransform: 'uppercase',
+            letterSpacing: 0.6,
+            fontWeight: '700',
+            paddingHorizontal: spacing.xs,
+          },
+        ]}
+      >
+        {title}
+      </Text>
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: radius.lg,
+          paddingHorizontal: spacing.lg,
+        }}
+      >
         {children}
       </View>
-    );
-  }
-
-  function Section({ title, children }: { title: string; children: React.ReactNode }) {
-    return (
-      <View style={{ gap: spacing.sm }}>
-        <Text
-          style={[
-            type.caption,
-            {
-              color: colors.textMuted,
-              textAlign,
-              textTransform: 'uppercase',
-              letterSpacing: 0.6,
-              fontWeight: '700',
-              paddingHorizontal: spacing.xs,
-            },
-          ]}
-        >
-          {title}
-        </Text>
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: radius.lg,
-            paddingHorizontal: spacing.lg,
-          }}
-        >
-          {children}
-        </View>
-      </View>
-    );
-  }
+    </View>
+  );
 }
