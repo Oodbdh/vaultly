@@ -179,7 +179,7 @@ export const PRIVACY: Record<SupportLocale, LegalDoc> = {
       },
       {
         heading: 'Contact',
-        body: 'Questions about privacy, or a request about your data, can be sent to the support address in Profile → Help & Support → Contact support.',
+        body: 'Questions about privacy, or a request about your data, can be sent to the support address in Profile → Support → Contact support.',
       },
     ],
   },
