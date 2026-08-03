@@ -1,0 +1,51 @@
+# Publishes the contents of docs/ to GitHub Pages.
+#
+# The privacy policy has to live at a stable public URL because Google Play
+# requires one in the store listing and in the Data safety form. Serving it from
+# this repo keeps the policy in version control next to the code it describes,
+# so a change in behaviour and the change in wording land in the same commit.
+name: Deploy docs to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    # Only redeploy when the published content or this workflow changes —
+    # app commits should not trigger a Pages deploy.
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# Least privilege: read the repo, and mint the OIDC token deploy-pages needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race. Queue rather than cancel, so a run that is already
+# publishing is allowed to finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload docs/ as the Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
