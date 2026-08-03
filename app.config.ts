@@ -80,6 +80,12 @@ const config: ExpoConfig = {
       'expo-build-properties',
       { android: { extraMavenRepos: [] } },
     ],
+    // `locales` above is top-level, so its iOS Info.plist keys also land in
+    // Android values-b+<locale>/strings.xml. Without a default-locale entry
+    // those are ExtraTranslation errors and :app:lintVitalRelease fails the
+    // release build — release only, which is why dev builds passed. See the
+    // plugin for the full explanation.
+    './plugins/withAndroidDefaultLocaleStrings',
   ],
   experiments: { typedRoutes: true },
 };
