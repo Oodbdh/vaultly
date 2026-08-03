@@ -618,14 +618,30 @@ by dependency scan), sub-processors are exactly Supabase/OpenAI/RevenueCat/Googl
 Play/Expo/Google Sign-In, the security section describes real mechanisms, and the
 deletion section matches what `delete-account` actually does.
 
-### Published — this is the URL Google Play gets
+### Published — these are the URLs Google Play gets
 
 ```
-https://oodbdh.github.io/vaultly/privacy.html
+https://oodbdh.github.io/vaultly/privacy.html          privacy policy
+https://oodbdh.github.io/vaultly/delete-account.html   data deletion
 ```
 
-Verified live 2026-08-03: **HTTP 200**, `text/html; charset=utf-8`, operator name
-and address each present twice, **zero** placeholders remaining.
+Both verified live 2026-08-03: **HTTP 200**, `text/html; charset=utf-8`, **zero**
+placeholders remaining, no horizontal overflow at mobile widths.
+
+`delete-account.html` exists because Play requires a publicly reachable deletion
+page **including a route that does not need the app installed** — hence the email
+request path alongside the in-app steps. Its list of what gets erased is written
+from `supabase/functions/delete-account/index.ts`, which removes in order:
+storage images → `vault_items` (warranties and subscriptions cascade) →
+`bonus_slots` → `profiles` → the `auth.users` row.
+
+⚠️ **The in-app route is `Profile → Support → Delete account`.** The policy used
+to say `Profile → Account → …`, which was wrong — `Delete account` is a row in
+the **Support** section of `app/(tabs)/profile.tsx`, and `account.tsx`
+("Account details") has no delete control at all. Anyone following the old
+wording reached a screen with no such button, on the exact route Play requires to
+work. Fixed 2026-08-03. If that row ever moves, **three** places must change
+together: the app, `docs/privacy.html`, and `docs/delete-account.html`.
 
 ⚠️ **Pages is served from the branch, not from the workflow.** Source is
 *Deploy from a branch → `main` → `/docs`*. `.github/workflows/pages.yml` has
@@ -779,7 +795,8 @@ result; Delete Account having no `onPress`.
    but no qualified person has read it (§14).
 3. **Play Console:** create the app, complete the Data safety form (it must match
    the privacy policy — "no analytics, no ads" is currently true), upload the AAB.
-   Policy URL: `https://oodbdh.github.io/vaultly/privacy.html`.
+   Policy URL: `https://oodbdh.github.io/vaultly/privacy.html`; data-deletion URL:
+   `https://oodbdh.github.io/vaultly/delete-account.html`.
 4. **Create the SAR 10/month subscription** in Play Console and map it to offering
    `default` / entitlement `premium_access` in RevenueCat. Add the webhook URL and
    secret in the RevenueCat dashboard. Then test a sandbox purchase and a restore.
