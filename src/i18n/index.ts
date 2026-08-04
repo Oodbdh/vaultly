@@ -38,6 +38,15 @@ export function deviceLocale(): AppLocale {
 /** ISO 4217 is three letters. Anything else is not a currency we can format. */
 const ISO_4217 = /^[A-Z]{3}$/;
 
+/**
+ * Last resort, when the device reports no usable currency at all.
+ *
+ * USD rather than the app's own SAR: this fires only for a device whose region
+ * is unset or unrecognised, where there is no evidence the user is in Saudi
+ * Arabia. USD is the least surprising guess in the absence of any signal.
+ */
+const FALLBACK_CURRENCY = 'USD';
+
 let cachedCurrency: string | null = null;
 
 /**
@@ -49,8 +58,7 @@ let cachedCurrency: string | null = null;
  * wins: a euro invoice stays in euros no matter where the phone is.
  *
  * Note this is region, not language — a device set to English in Japan reports
- * JPY, which is the desired answer. `SAR` remains the last resort, since the
- * app's own pricing and jurisdiction are Saudi.
+ * JPY, which is the desired answer.
  *
  * Cached because the value cannot change without the OS restarting the app,
  * and it is read on every amount that renders.
@@ -64,7 +72,7 @@ export function deviceCurrency(): string {
       return code;
     }
   }
-  cachedCurrency = 'SAR';
+  cachedCurrency = FALLBACK_CURRENCY;
   return cachedCurrency;
 }
 
