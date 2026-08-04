@@ -1,11 +1,12 @@
 # Vaultly — Project State
 
-**Single source of truth. Last verified: 2026-08-03.**
+**Single source of truth. Last verified: 2026-08-04.**
 
-Every claim here was checked against the live project, the live database or the
-working tree on that date — not recalled. Where something is unverified, it says
-so explicitly. `HANDOVER.md` is an older document kept for its post-mortems; if
-the two disagree, **this file is correct**.
+Every claim here was checked against the live project, the live database, a real
+device or the working tree on that date — not recalled. Where something is
+unverified, it says so explicitly, and §24 lists exactly what is unverified.
+`HANDOVER.md` is an older document kept for its post-mortems; if the two
+disagree, **this file is correct**.
 
 ---
 
@@ -22,22 +23,32 @@ verified on a real device**.
 The repo is **public at `github.com/Oodbdh/vaultly`** and the **privacy policy is
 live** at `https://oodbdh.github.io/vaultly/privacy.html` (§14).
 
-**What is not done:** no Play Console listing, no store products, and no real
-receipt has been through the new OCR pipeline.
+**Google Play phone screenshots exist** — 12 PNGs captured from the app running
+on a real device, in `store-assets/google-play/screenshots/` (§20).
+
+**What is not done:** no Play Console listing, no store products, no real receipt
+has been through the new OCR pipeline, and the email-change flow has not been
+exercised end to end against a real inbox (§10).
 
 **Immediate next actions** — see §18 for the full ordered list:
-1. Scan one real receipt to exercise the new pipeline (§8).
-2. Get the privacy policy reviewed by a lawyer, then create the Play listing.
+1. Sign in on the device and run one real email change, both links (§10).
+2. Scan one real receipt to exercise the new pipeline (§8).
+3. Re-shoot `12-receipt-scanner.png`, which is stale **and** dark (§20).
+4. Get the privacy policy reviewed by a lawyer, then create the Play listing.
 
-**Verification gates, re-run 2026-08-03 after applying `0004`:**
+**Verification gates, re-run 2026-08-04:**
 
 | Gate | Command | Result |
 |---|---|---|
 | Types | `npx tsc --noEmit` | **clean** |
 | Tests | `npm test` | **119 pass / 0 fail, 27 suites** |
-| Database | `npm run db:check` | **10/10 PASS** |
-| Edge Function | `npm run fn:check` | **4/4 PASS** |
-| Production AAB | EAS `523f6dbc` | **finished, signed** |
+| Database | `npm run db:check` | **10/10 PASS** (2026-08-03) |
+| Edge Function | `npm run fn:check` | **4/4 PASS** (2026-08-03) |
+| Production AAB | EAS `523f6dbc` | **finished, signed** — predates all §20–§22 work |
+
+⚠️ **The signed AAB is now well behind `main`.** It was built from `7281c24`;
+everything in §20–§22 landed after it. A new production build is required before
+any Play upload.
 
 ---
 
@@ -126,8 +137,26 @@ placeholders; every credential-shaped match in tracked files is a variable *name
 (`Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')`) or a deliberately bogus test JWT.
 Safe to publish.
 
-**Commit history:**
+**Commit history** (newest first; 35 commits on `main` as of 2026-08-04):
 ```
+4f22de9  stop mock mode reporting a verification email it never sent
+f907275  stop dimming the camera preview; keep only a guide
+09c1c2e  complete the email-change flow; make the amount label tell the truth
+09f6c73  add the Google Play phone screenshot set
+3532959  fix card and header layout defects; give the showcase real currencies
+45e1d36  make showcase mode actually reach the premium gates
+c8ad6ff  add a store-listing demo seed and the screenshot capture pipeline
+8f07e46  fall back to USD, not SAR, when no currency can be determined
+06981eb  fix camera letterboxing, SAR-everywhere currency, CTA layout non-Arabic
+dd74727  record the Delete Account page and the corrected in-app deletion route
+01c6cc1  publish a Delete Account page, and correct the route it documents
+0aae4b9  record the published privacy policy and the public repo
+2be34dd  fill the operator identity in the privacy policy and terms
+f4a14f5  set the minimum age in the privacy policy to 13
+cbfceac  let the Pages workflow enable Pages itself
+3ed272f  make the Settings reminder toggles actually control reminders
+e23e848  hoist profile.tsx's presentational components to module scope
+07568ce  apply migration 0004 and drop the placeholders that stood in for it
 c430631  rewrite PROJECT_STATE as a self-sufficient handoff
 9feeb04  privacy policy + GitHub Pages workflow
 7281c24  fix release build: Android default-locale strings (lint)
@@ -221,9 +250,23 @@ otherwise floats to a version demanding a newer React than SDK 54 pins.
 | `EXPO_PUBLIC_REVENUECAT_IOS_KEY` | empty — **intentional**, no iOS app yet |
 | `EXPO_PUBLIC_GEMINI_MODEL` | set (inert) |
 | `EXPO_PUBLIC_USE_MOCK_DATA` | empty ⇒ live database |
+| `EXPO_PUBLIC_DEMO_SHOWCASE` | **not in `.env`** — set on the command line for screenshot runs only (§23) |
 | `EXPO_PUBLIC_AI_PROVIDER` | empty ⇒ `edge` |
 | `EXPO_PUBLIC_ADMOB_*` | empty (no longer read — §13) |
 | `EAS_PROJECT_ID` | empty; hardcoded fallback in `app.config.ts` |
+
+🔴 **`EXPO_PUBLIC_USE_MOCK_DATA` is the single most dangerous variable here.**
+It is deliberately absent from `.env`, but it is passed on the command line for
+screenshot runs and **survives in whatever Metro process is still running**. An
+app served by that Metro looks fully functional while nothing leaves the device:
+sign-in is fake, data is seeded, and — until `4f22de9` — email change reported
+success without sending anything (§10.3). Before debugging anything server-side,
+check what is actually being served:
+
+```bash
+curl -s -H "expo-platform: android" -H "accept: application/expo+json,application/json" \
+  http://localhost:8081/ | grep -o '"useMockData":[a-z]*'
+```
 
 **EAS environment variables** (all three environments: development, preview,
 production) — set 2026-08-03:
@@ -440,7 +483,10 @@ an account picker followed by a silent bounce back to Sign In.
 
 ---
 
-## 10. Email change — fixed (`1a493da`)
+## 10. Email change — fixed (`1a493da`, `09c1c2e`, `4f22de9`)
+
+⚠️ **Read §10.3 first if someone reports "no email arrives."** It was mock mode
+both times it was investigated, not mail.
 
 Two independent defects.
 
@@ -467,9 +513,58 @@ does not expose), plus a `notice` status that surfaces GoTrue's own wording.
 **It was never a refresh bug** — `refreshSession()`/`refreshUser()` were correct
 throughout and returned the old address because the server still held it.
 
-⚠️ **Open product decision:** `account.emailPending` still tells the user to check
-only the *new* address, while the flow requires opening **both** links. Either
-reword in five locales, or turn Secure email change off in the dashboard.
+### 10.3 — 2026-08-04: "no email arrives" — mock mode, not mail (`4f22de9`)
+
+Reported as *"the app says the verification email was sent, but nothing
+arrives."* **Nothing was wrong with email.** The app under test was running with
+`EXPO_PUBLIC_USE_MOCK_DATA=true`, left over from the screenshot run (§20), and
+`updateEmail` short-circuited:
+
+```ts
+updateEmail: async (email) => {
+  if (USE_MOCK_DATA) return {};   // success. no network call. no email.
+```
+
+From the user's side a fabricated success is indistinguishable from a dead mail
+server, which is exactly what it was mistaken for. Confirmed by reading the
+served Expo manifest: `"useMockData": true`.
+
+`updateEmail` now **fails loudly** under `USE_MOCK_DATA` instead of faking
+success, with a dev-console warning naming the env var to unset. Every other
+mock write can be faked honestly because its result is local; this one cannot,
+because the entire operation *is* an email. The message is deliberately
+untranslated — it is unreachable in a shipped build, where Supabase credentials
+are always present and `USE_MOCK_DATA` is therefore false.
+
+**Evidence gathered against the live project, all on 2026-08-04:**
+
+| Question | Method | Answer |
+|---|---|---|
+| Is SMTP working? | `POST /auth/v1/recover` for the owner's address | **Yes** — HTTP 200, and `auth.users.recovery_sent_at` advanced to 56 s ago |
+| Rate limited? | same call | **No** — no 429, accepted immediately |
+| Secure email change on? | `email_change_confirm_status = 1` on two users | **Yes** — that value only exists in the two-step flow |
+| Does `updateUser({email})` work? | `email_change_sent_at` populated 2026-08-02 18:49 and 2026-08-03 08:33 | **Yes** — only GoTrue sets that, and only on a processed request |
+| Client call correct? | code read | **Yes** — `updateUser({ email }, { emailRedirectTo })`, unchanged |
+
+That SMTP probe sent a **real password-reset email** to `odiymosa420@gmail.com`.
+It is harmless and changed nothing — it was the only way to test delivery
+without handling a password. There is **no known defect in password reset**; it
+was used purely as an instrument.
+
+⚠️ **Two accounts are stuck mid-change.** Both sit at
+`email_change_confirm_status = 1` with a pending `email_change` from 2 and 3
+August — one link opened, the second never was. A *new* change request while one
+is pending may behave unexpectedly. Complete or clear these before testing.
+
+⚠️ **Still unverified end to end.** Signing in needs the account password, which
+automation must not handle, so the real two-link round trip has never been run.
+See §18.1 for the exact steps.
+
+**Copy fixed (`09c1c2e`).** `account.emailPending` used to name only the new
+address while the flow requires **both** links; anyone following it opened one,
+met GoTrue's *"proceed to confirm link sent to the other email"*, and reasonably
+concluded the feature was broken. Reworded in all five locales. Verified on
+device that the two-link notice renders.
 
 ⚠️ Supabase's built-in SMTP is heavily rate-limited and each change sends two
 emails, so testing exhausts the quota fast.
@@ -722,6 +817,23 @@ muted `#6B7280`, navy `#1B2A4A`, gold `#C8A548`. Three-slot bottom bar:
 **Home · FAB · Profile** (the FAB is not a tab; a spacer tab reserves its slot).
 22 routes. Arabic runs 1–2px larger via `typeScale(locale)`.
 
+### Layout fixes, 2026-08-04 (`06981eb`, `3532959`)
+
+Four defects, all found by photographing the app rather than reading it, and all
+sharing one cause: **`flex: 1` means `flexBasis: 0`**, so a text column next to
+an unconstrained sibling collapses to nothing.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Active subsc / riptions` — broke **inside** a word | 3 tiles across a phone leave ~77 dp; "subscriptions" needs ~80 | `SummaryCard` horizontal padding `md` → `sm`. `adjustsFontSizeToFit` alone did **not** help: on Android it shrinks to fit the *line count*, not to avoid a break |
+| `Good morning, …` — name ellipsed away | Title + emoji + language chip on one row, capped at 1 line | `adjustsFontSizeToFit`, `minimumFontScale={0.75}` |
+| `Amaz…` on the subscription card | Name column `flex: 1` (basis 0) beside an unconstrained countdown pill; the pill took ~200 dp of a 296 dp card, leaving ~24 dp | Name gets `flexBasis: 'auto'` + `minWidth: 96`; the pill is the side that shrinks |
+| CTA buttons wildly different heights outside Arabic | `Button` had no wrapping guard and 24 dp side padding; `quota.watchAd` is 34 chars in EN, **46 in FR**, short in AR | `numberOfLines={2}`, `adjustsFontSizeToFit`, centred, padding `xl` → `lg`; `QuotaBanner` pair gets `flexBasis: 0` + `minWidth: 0` |
+
+⚠️ **Arabic is the shortest string in nearly every pair**, which is precisely
+why these only showed outside Arabic. When checking layout across languages,
+**French and German are the worst cases**, not Arabic.
+
 ---
 
 ## 16. Testing
@@ -762,10 +874,17 @@ npx tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext \
 
 | Issue | Severity | Notes |
 |---|---|---|
-| Email-change copy names only the new address | 🟡 Medium | Secure email change needs **both** links (§10) |
+| **Two accounts stuck at `email_change_confirm_status = 1`** | 🟠 High | Pending changes from 2–3 Aug, one link opened each. A new change request while one is pending may misbehave. Complete or clear before testing (§10) |
+| **Production AAB is 18 commits behind `main`** | 🟠 High | Built from `7281c24`; nothing in §20–§23 is in it. Rebuild before any Play upload |
+| **Metro's watcher misses edits in this OneDrive folder** | 🟠 High | Not an app bug, but it produces confidently wrong debugging. Always `--clear` and grep the bundle (§19) |
+| Scanner overlay unverified on screen | 🟡 Medium | `f907275` bundle-verified only (§21, §24) |
+| Filter chip row clips mid-chip on list screens | 🟡 Medium | Horizontally scrollable, so normal in use, but reads as clipping in a still — visible in `04-warranties.png` |
+| Detail screens show an empty "Receipt" placeholder | 🟡 Medium | No seed item has an `image_path`; screenshots scroll past it. A real image would fill it |
+| Subscription detail shows `Merchant: Entertainment` | 🟡 Medium | The row renders `category`; for subscriptions the seed puts the category there. Reads oddly but is existing behaviour |
 | `sign-in.tsx` collapses all OAuth errors | 🟡 Medium | Every failure shows `providerUnavailable`; `void oauth()` swallows throws |
 | Premium/webhook race | 🟡 Medium | §12 |
 | Subscriptions have no edit flow | 🟡 Medium | Schema, reminders and screens exist |
+| Clean status bar impossible on this device | 🟢 Low | HONOR skin ignores SystemUI demo mode; screenshots show Arabic-Indic numerals and notification icons (§20) |
 | "Backup & restore" is a stub | 🟢 Low | No export exists; the privacy policy therefore points users to email for data copies |
 | Stray `public.تطبيق` table | 🟢 Low | Not in any migration. RLS on, inserts rejected. Pollutes generated types |
 | Progress bar uses `duration_months * 30` | 🟢 Low | Affects bar fill only, never the day count |
@@ -789,38 +908,74 @@ result; Delete Account having no `onPress`.
 
 ## 18. Next priorities, in order
 
-1. **Scan one real receipt** — the five-stage pipeline has never processed a photo.
-   Highest-value untested path.
-2. **Get the privacy policy reviewed by a lawyer.** It is published and complete,
+1. **Run one real email change, end to end.** The only thing standing between
+   this feature and "verified" is a sign-in, which automation must not do.
+   Sign in on the device → Profile → Account details → new address → *Send
+   verification link* → open **both** emails. Then confirm server-side:
+   ```sql
+   select email_change_sent_at, email_change_confirm_status from auth.users;
+   ```
+   Expect `confirm_status` to reach **2**. Clear the two stuck pending changes
+   first (§10, §17).
+2. **Look at the scanner on screen** and confirm `f907275` — no dimming, corner
+   markers visible, header floating (§21). Bundle-verified only today.
+3. **Scan one real receipt** — the five-stage pipeline has never processed a
+   photo. Highest-value untested path.
+4. **Re-shoot `12-receipt-scanner.png`** with the phone over an actual receipt
+   (§20). Optional: Play needs only 2–8 screenshots and 11 are ready.
+5. **Rebuild the production AAB.** The signed one is from `7281c24` and is 18
+   commits behind `main`.
+6. **Get the privacy policy reviewed by a lawyer.** It is published and complete,
    but no qualified person has read it (§14).
-3. **Play Console:** create the app, complete the Data safety form (it must match
+7. **Play Console:** create the app, complete the Data safety form (it must match
    the privacy policy — "no analytics, no ads" is currently true), upload the AAB.
    Policy URL: `https://oodbdh.github.io/vaultly/privacy.html`; data-deletion URL:
    `https://oodbdh.github.io/vaultly/delete-account.html`.
-4. **Create the SAR 10/month subscription** in Play Console and map it to offering
+8. **Create the SAR 10/month subscription** in Play Console and map it to offering
    `default` / entitlement `premium_access` in RevenueCat. Add the webhook URL and
    secret in the RevenueCat dashboard. Then test a sandbox purchase and a restore.
-5. **Resolve the dormant Pages workflow** — delete `.github/workflows/pages.yml`,
+9. **Resolve the dormant Pages workflow** — delete `.github/workflows/pages.yml`,
    or turn Actions on and switch the Pages source to it. Leaving both half-set is
    how this silently breaks later (§14).
-6. **Re-add AdMob** with real app IDs — and update the privacy policy in the same
-   change.
-7. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
-   Still the only way to exercise authenticated paths end to end.
-8. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
+10. **Re-add AdMob** with real app IDs — and update the privacy policy in the same
+    change.
+11. Turn `mailer_autoconfirm` off → `npm run db:smoke -- --yes` → turn it back on.
+    Still the only way to exercise authenticated paths end to end.
+12. Replace `assets/notification-icon.png`; add CI (typecheck + test + db:check).
 
-**Done since this list was written**, all on 2026-08-03:
+**Done 2026-08-03:**
 
 - `migrations/0004_profile_prefs.sql` applied to the linked project, types
   regenerated, and the two placeholders it required (`PendingProfileColumns`,
-  the `as never` cast) deleted. See §6.
+  the `as never` cast) deleted (`07568ce`). See §6.
 - `Divider` / `LinkRow` / `Row` / `Section` in `app/(tabs)/profile.tsx` hoisted
-  to module scope, matching the fix already made in `account.tsx`. Verified by
-  requesting the Android bundle from Metro (HTTP 200) as well as `tsc`, since
-  the suite has no component coverage.
-- The Settings reminder toggles wired end to end — see §15.
+  to module scope (`e23e848`), matching the fix already made in `account.tsx`.
+- The Settings reminder toggles wired end to end (`3ed272f`) — see §15.
 - Repo renamed to `vaultly`, made public, and pushed. Privacy policy published
-  and verified at HTTP 200, with every placeholder filled — see §2 and §14.
+  and verified at HTTP 200, with every placeholder filled (`cbfceac`, `f4a14f5`,
+  `2be34dd`, `0aae4b9`) — see §2 and §14.
+- Delete Account page published, and the in-app deletion route it documented
+  corrected from `Profile → Account` to `Profile → Support` (`01c6cc1`,
+  `dd74727`) — see §14.
+
+**Done 2026-08-04:**
+
+- Camera preview letterboxing fixed by cover-sizing (`06981eb`), verified on
+  device by per-row pixel variance — §21.1.
+- Dark scanner overlay removed; corner-marker guide and floating header
+  (`f907275`) — §21.2. **Not yet seen on screen.**
+- Currency: device-region resolution with a **USD** last resort (`8f07e46`), OCR
+  no longer coercing to SAR, and the amount label made to match what is actually
+  stored (`09c1c2e`) — §22. Verified on device.
+- Showcase demo seed and capture pipeline (`c8ad6ff`), premium gates actually
+  reached (`45e1d36`), realistic multi-currency data and shorter titles
+  (`3532959`) — §23.
+- Layout: summary tile no longer wraps mid-word, greeting no longer ellipses the
+  name, subscription card no longer starves the name (`3532959`), CTA buttons
+  sized consistently across languages (`06981eb`) — §15.
+- 12 Google Play screenshots captured from the real app (`09f6c73`) — §20.
+- Email change: copy corrected to describe both links (`09c1c2e`); mock mode no
+  longer fabricates a "sent" result (`4f22de9`) — §10.
 
 ---
 
@@ -846,6 +1001,264 @@ result; Delete Account having no `onPress`.
   falls back to Site URL.
 - **Fast Refresh can serve stale modules.** After structural changes, fully close
   the app and relaunch.
+- 🔴 **Metro's file watcher does not see edits in this OneDrive folder at all.**
+  This is worse than stale Fast Refresh and it cost three wasted verification
+  cycles on 2026-08-04: the app was relaunched, the screenshot showed no change,
+  and the obvious conclusion — "my fix didn't work" — was wrong every time. The
+  only reliable loop here is:
+
+  1. edit
+  2. restart with `npx expo start --clear`
+  3. **grep the served bundle** to prove the change is in it
+  4. only then relaunch and look
+
+  ```bash
+  curl -s -o /tmp/b.js "http://localhost:8081/node_modules/expo-router/entry.bundle?platform=android&dev=true"
+  grep -c "some string from your edit" /tmp/b.js
+  ```
+
+  Grep for **code**, not comments — comment survival through the transform is
+  inconsistent, which produced one false negative on its own.
+- **A screenshot is not proof the code ran.** Twice a conclusion was drawn from a
+  device screenshot that turned out to reflect a stale bundle. Confirm the bundle
+  first; the screen second.
+- **Do not diagnose a dark screen by eye.** "Camera showing a dark room" and
+  "black letterbox bars" are the same pixels to a human. Per-row pixel variance
+  separates them in seconds — sensor noise is never uniform, a letterbox is
+  (§21).
+- **Mock mode can fabricate success for operations it cannot perform.** The
+  email-change bug hunt of 2026-08-04 was entirely this (§10). Anything whose
+  *effect is remote* — mail, payments, push — must fail loudly under
+  `USE_MOCK_DATA` rather than return a cheerful empty object.
 - **When something numeric looks wrong in Arabic, check the plural forms before
   the arithmetic.**
 - **The two nested project folders** (§1).
+
+---
+
+## 20. Store assets and Google Play screenshots
+
+```
+store-assets/
+  google-play/screenshots/   the deliverable — 12 Play-ready PNGs
+  lib/shot.ps1               capture + post-processing helpers
+  .raw/                      untouched 1080x2400 device frames (gitignored)
+  README.md                  how to regenerate
+```
+
+Every screenshot is a real frame from the app running on the HONOR X9a 5G,
+driven over adb. No mockups, no redesign.
+
+### The 12 files
+
+| # | File | Screen | Upload-ready |
+|---|---|---|---|
+| 01 | `01-home-dashboard.png` | Home dashboard | ✅ |
+| 02 | `02-receipts.png` | All invoices | ✅ |
+| 03 | `03-receipt-details.png` | Receipt detail | ✅ |
+| 04 | `04-warranties.png` | All warranties | ✅ |
+| 05 | `05-warranty-details.png` | Warranty detail | ✅ |
+| 06 | `06-subscriptions.png` | All subscriptions | ✅ |
+| 07 | `07-subscription-details.png` | Subscription detail | ✅ |
+| 08 | `08-search.png` | Search, query "Apple" | ✅ |
+| 09 | `09-profile-settings.png` | Profile + settings | ✅ |
+| 10 | `10-add-to-vault.png` | Add sheet | ✅ |
+| 11 | `11-add-warranty.png` | Add form, filled | ✅ |
+| 12 | `12-receipt-scanner.png` | Scanner camera | ❌ **stale and dark** |
+
+🔴 **`12-receipt-scanner.png` must be re-shot.** Two problems: it was captured
+*before* the overlay was removed (§21), so it still shows the dark dimming
+panes; and the phone was face-down, so the preview is black. Play needs only
+2–8 phone screenshots, so the other 11 are sufficient without it.
+
+### Why 1080×1920 and not the device's native size
+
+The panel is 1080×2400 (20:9). Play wants 16:9 or 9:16 with the long side at
+most twice the short one; 2400 ÷ 1080 = 2.22 fails **both** rules and is
+rejected at upload. `Capture-Shot` scales each frame to fit 1080×1920 and
+centres it on a canvas filled from **the frame's own corner pixel**, so the
+padding is invisible against the near-white app screens and equally invisible
+against the black camera screen. Nothing is cropped or stretched — cropping to
+force the ratio would eat 480 px of real UI.
+
+### Regenerating
+
+`store-assets/README.md` has the full procedure. In short: connect the phone
+with USB debugging accepted, start Metro with
+`EXPO_PUBLIC_USE_MOCK_DATA=true EXPO_PUBLIC_DEMO_SHOWCASE=true`, `adb reverse
+tcp:8081 tcp:8081`, then dot-source `store-assets/lib/shot.ps1` and call
+`Capture-Shot -Name '…'`.
+
+⚠️ **`shot.ps1` is deliberately pure ASCII.** Windows PowerShell 5.1 reads a
+BOM-less `.ps1` as the system ANSI codepage, so any non-ASCII character in it —
+including one inside a hard-coded path — is mangled at parse time. The user
+profile here is `C:\Users\<arabic>`, which is precisely how a hard-coded adb
+path once became unrunnable. The script therefore resolves adb at runtime via
+`$env:VAULTLY_ADB`, then `PATH`, then a search under `%LOCALAPPDATA%\Temp\claude`.
+
+⚠️ **There is no Android SDK on this machine.** adb lives in a Claude scratch
+directory; `Resolve-Adb` finds it. If it vanishes, re-download
+platform-tools (§1).
+
+⚠️ **Clean status bar is best-effort and does not work here.** HONOR's skin
+ignores SystemUI demo mode, so `Enter-CleanStatusBar` is a no-op and the bar
+shows Arabic-Indic numerals plus notification icons. The device locale is
+`ar-US` — Arabic language, **US region** — which is also why `deviceCurrency()`
+resolves to USD (§22).
+
+---
+
+## 21. Receipt scanner — full-screen camera and undimmed overlay
+
+Two separate problems, fixed in two commits, and the first diagnosis was wrong.
+
+### 21.1 Preview was letterboxed (`06981eb`)
+
+`CameraView` had `flex: 1`, so it was handed a box whose aspect ratio is the
+screen minus the header — about 0.48 on a tall phone. No sensor produces that,
+so the preview fitted inside it and the black backdrop showed as bars.
+
+Fixed by sizing the preview to **cover**: pin it to 16:9 with `ratio`, compute
+the smallest 16:9 box that covers the container, centre it, clip the overflow.
+Nothing is stretched. The overlay moved from being a *child* of `CameraView` to
+a **sibling** — as a child it would inherit the deliberately oversized frame and
+be pushed off-screen with it.
+
+**Verified measurably on device**, because a dark room and a letterbox look
+identical by eye. Per-row pixel variance on the raw capture:
+
+```
+row 210   1 distinct luminance level, 100% pure black   <- app header, expected
+row 300   3 levels, 0% pure black                        <- camera signal
+row 1500  9 levels, 0% pure black
+row 2390  4 levels, 0% pure black                        <- bottom of screen
+```
+
+Live sensor noise on every row from y=300 to y=2390; a letterbox would be a
+uniform black band. **No bars.**
+
+### 21.2 The dark overlay (`f907275`)
+
+The remaining darkness was never the camera. The overlay painted four
+`rgba(0,0,0,0.55)` panes around the capture window, so most of the viewfinder
+was 55 % black.
+
+It bought nothing: `takePictureAsync` has always captured the **full sensor
+frame**. The frame is a positioning *guide*, not a crop, so dimming the rest hid
+image the app keeps anyway while costing the user sight of what they were
+aiming at.
+
+- All four dimming panes **removed**. Zero remain — confirmed by grepping the
+  served bundle, not the source.
+- Guide is now `GuideFrame`: four corner markers plus a hairline outline.
+- Legibility comes from **drop shadows on the marks and text**, never from
+  darkening the image. This matters because the usual subject is a white
+  receipt, where plain white marks vanish.
+- The header in `app/item/new.tsx` no longer sits above the camera as an opaque
+  black strip ~250 px tall. It floats over the preview with
+  `pointerEvents="box-none"`, so the viewfinder runs the full screen height.
+
+⚠️ **`f907275` is NOT verified on screen.** Types clean, 119 tests pass, and the
+bundle contains `GuideFrame` with **0** occurrences of `rgba(0,0,0,0.55)` — but
+the device dropped off adb mid-verification and it has never been looked at. See
+§24.
+
+---
+
+## 22. Currency localization
+
+Rule, in order: **the record's own currency → the device's region currency →
+USD**.
+
+- `deviceCurrency()` and `resolveCurrency()` live in `src/i18n/index.ts`.
+  `deviceCurrency()` reads `expo-localization`'s `currencyCode`, validates it
+  against `/^[A-Z]{3}$/`, and caches it.
+- `FALLBACK_CURRENCY = 'USD'` (`8f07e46`). It is reached only when the device
+  reports no usable currency — an unset or unrecognised region, where there is
+  no evidence the user is in Saudi Arabia. It is a named constant so it is
+  greppable and not mistaken for the SAR literals still in `src/mocks`, which
+  are seeded invoices that genuinely *are* SAR.
+- `formatCurrency(amount, locale, currency?)` takes `string | null` on purpose:
+  a default parameter only fires on `undefined`, so it would miss the `null`s
+  the database and the OCR extractor actually return — that would be an `Intl`
+  crash, not a fallback.
+- The OCR extractor returns `null` for an undetected currency (`06981eb`). It
+  used to coerce to `'SAR'`, which is what made every scan claim to be Saudi.
+  Absence of a currency is not evidence of a Saudi receipt.
+
+**Verified end to end on device, 2026-08-04.** The device is `ar-US`, so
+`deviceCurrency()` = USD. A warranty saved with **no** explicit currency
+rendered **$500.00** — device region, not hardcoded SAR.
+
+That test found a further defect, now fixed (`09c1c2e`): `add-warranty.tsx`,
+`add-subscription.tsx` and `new.tsx` all hard-coded `Total (SAR)` in the amount
+label while the save path used `resolveCurrency()`. On this device the field
+said SAR and stored USD. The label now resolves the same way the save does —
+verified reading **`Total (USD)`** on screen. `common.sar` is no longer
+referenced anywhere in `app/` or `src/`.
+
+⚠️ **Existing rows keep the currency already stored against them.** This changed
+nothing retroactively; it only affects new items.
+
+---
+
+## 23. Showcase / demo mode
+
+`EXPO_PUBLIC_DEMO_SHOWCASE=true` (with `USE_MOCK_DATA`) selects `SHOWCASE_SEED`
+in `src/mocks/seed.ts` instead of the design seed, and runs the account as
+premium. `DEMO_SHOWCASE` is exported from `src/constants/config.ts`.
+
+The showcase seed sits **alongside** the original `SEED` rather than replacing
+it: that one exists to put every countdown tier on screen at once for design
+review, and retuning it for screenshots would have destroyed that silently.
+
+**17 items** across the merchants in the brief — Starbucks, Carrefour, Apple
+Store, IKEA, Zara, Nike, Noon (receipts); Samsung 65" TV, MacBook Pro, Dyson
+V15, LG Washer, Sony XM5 (warranties); Netflix, Spotify, iCloud+, Adobe CC,
+Amazon (subscriptions).
+
+**Currencies follow each merchant's home market** — USD, EUR, AED, SAR — which
+also exercises the "keep the invoice's own currency" rule on a real screen.
+Amounts are **priced in each currency, not converted from one figure**: a
+MacBook is $1,999, not $9,299; a Starbucks run is $12.85, not SAR 42.50.
+
+Titles are deliberately short. The cards give a name roughly 12–14 characters
+beside a countdown pill, so "Adobe Creative Cloud" rendered as "Adobe Crea…".
+
+⚠️ **Premium is not vanity.** The free tier caps at 4 items, so a full vault
+photographed beside "3 of 4 items used" reads as a bug — and premium also drops
+the rewarded-ad card, which has no business in a store listing.
+
+⚠️ **`plan_tier` on the mock profile does nothing on its own** (`45e1d36`).
+Every premium gate reads `useEntitlementStore`, whose source of truth is
+RevenueCat; the `profiles` row is only a webhook mirror for server-side quota
+checks. `DEMO_SHOWCASE` therefore forces `isPremium` in the store itself,
+including in `setInfo`, so a late `CustomerInfo` callback cannot flip it back.
+
+🔴 **The mock-mode trap.** `USE_MOCK_DATA` makes the app *look* fully functional
+while nothing leaves the device. This directly caused the 2026-08-04
+email-change false alarm (§10). Before debugging anything that involves a
+server, check the served manifest:
+
+```bash
+curl -s -H "expo-platform: android" -H "accept: application/expo+json,application/json" \
+  http://localhost:8081/ | grep -o '"useMockData":[a-z]*'
+```
+
+---
+
+## 24. What is NOT verified
+
+Everything else in this document was checked. These were not:
+
+| Item | Status | What it needs |
+|---|---|---|
+| Scanner overlay (`f907275`) | bundle-verified only, **never seen on screen** | Relaunch and look; the device dropped off adb mid-check |
+| Email change end to end | **never run against a real inbox** | Sign in on device, change address, open **both** links (§10) |
+| Real receipt through OCR | **never** | One photo through the five-stage pipeline (§8) |
+| `12-receipt-scanner.png` | stale **and** dark | Re-shoot with the phone over a receipt (§20) |
+| Production AAB vs `main` | AAB is from `7281c24`, **18 commits behind** | New EAS production build before any upload |
+| Play Console listing | not started | §18 |
+| Store products / RevenueCat | not started | §12 |
+
+---
