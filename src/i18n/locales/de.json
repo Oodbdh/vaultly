@@ -357,7 +357,7 @@
     "currentEmail": "Aktuelle E-Mail",
     "newEmail": "Neue E-Mail-Adresse",
     "sendVerification": "Bestätigungslink senden",
-    "emailPending": "Wir haben einen Bestätigungslink an {{email}} gesendet. Die E-Mail deines Kontos ändert sich erst, wenn du ihn öffnest.",
+    "emailPending": "Wir haben einen Bestätigungslink an {{email}} und einen weiteren an deine aktuelle E-Mail gesendet. Die E-Mail deines Kontos ändert sich erst, wenn du beide öffnest.",
     "sameEmail": "Das ist bereits deine E-Mail-Adresse.",
     "newPassword": "Neues Passwort",
     "confirmPassword": "Neues Passwort bestätigen",

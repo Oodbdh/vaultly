@@ -357,7 +357,7 @@
     "currentEmail": "Current email",
     "newEmail": "New email address",
     "sendVerification": "Send verification link",
-    "emailPending": "We sent a verification link to {{email}}. Your account email changes only after you open it.",
+    "emailPending": "We sent a verification link to {{email}} and another to your current address. Your account email changes only after you open both.",
     "sameEmail": "That's already your email address.",
     "newPassword": "New password",
     "confirmPassword": "Confirm new password",

@@ -357,7 +357,7 @@
     "currentEmail": "Correo actual",
     "newEmail": "Nuevo correo electrónico",
     "sendVerification": "Enviar enlace de verificación",
-    "emailPending": "Enviamos un enlace de verificación a {{email}}. El correo de tu cuenta solo cambiará cuando lo abras.",
+    "emailPending": "Enviamos un enlace de verificación a {{email}} y otro a tu correo actual. El correo de tu cuenta solo cambiará cuando abras ambos.",
     "sameEmail": "Ese ya es tu correo electrónico.",
     "newPassword": "Nueva contraseña",
     "confirmPassword": "Confirmar nueva contraseña",

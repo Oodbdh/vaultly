@@ -14,6 +14,7 @@ import {
   type WarrantyChoice,
 } from '@/components/WarrantyDurationPicker';
 import { colors, radius, spacing, typeScale } from '@/theme';
+import { deviceCurrency } from '@/i18n';
 import { useDirection } from '@/i18n/rtl';
 import { useCreateItem } from '@/hooks/useItems';
 
@@ -88,7 +89,11 @@ export default function AddWarranty() {
         <Field label={t('form.productName')} value={productName} onChangeText={setProductName} />
         <Field label={t('item.merchant')} value={merchant} onChangeText={setMerchant} />
         <Field
-          label={`${t('item.total')} (${t('common.sar')})`}
+          // The row is stored with `resolveCurrency(undefined)`, i.e. the
+          // device's region currency. Hard-coding SAR here promised one thing
+          // and saved another: on a US-region device the field said SAR and the
+          // saved warranty rendered $500.00.
+          label={`${t('item.total')} (${deviceCurrency()})`}
           value={amount}
           onChangeText={setAmount}
           keyboardType="decimal-pad"

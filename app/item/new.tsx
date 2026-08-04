@@ -264,7 +264,9 @@ export default function NewItem() {
 
         <Field label={t('item.merchant')} value={merchant} onChangeText={setMerchant} />
         <Field
-          label={`${t('item.total')} (${t('common.sar')})`}
+          // Tracks the same resolution the save uses: the scanned invoice's
+          // own currency when OCR found one, otherwise the device's region.
+          label={`${t('item.total')} (${resolveCurrency(extraction?.currency)})`}
           value={total}
           onChangeText={setTotal}
           keyboardType="decimal-pad"

@@ -13,6 +13,7 @@ import {
   type RenewalChoice,
 } from '@/components/RenewalPicker';
 import { colors, radius, spacing, typeScale } from '@/theme';
+import { deviceCurrency } from '@/i18n';
 import { useDirection } from '@/i18n/rtl';
 import { useCreateSubscription } from '@/hooks/useCreateSubscription';
 import type { BillingPeriod } from '@/lib/database.types';
@@ -86,7 +87,9 @@ export default function AddSubscription() {
 
         <Field label={t('form.serviceName')} value={name} onChangeText={setName} placeholder="Netflix" />
         <Field
-          label={`${t('item.total')} (${t('common.sar')})`}
+          // See add-warranty: the label has to name the currency that will
+          // actually be stored, which is the device's region currency.
+          label={`${t('item.total')} (${deviceCurrency()})`}
           value={amount}
           onChangeText={setAmount}
           keyboardType="decimal-pad"
