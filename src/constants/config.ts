@@ -14,6 +14,7 @@ type Extra = {
   admobRewardedIos?: string;
   admobRewardedAndroid?: string;
   useMockData?: boolean;
+  demoShowcase?: boolean;
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as Extra;
@@ -42,6 +43,17 @@ export const env = {
  */
 export const USE_MOCK_DATA =
   extra.useMockData === true || !env.supabaseUrl || !env.supabaseAnonKey;
+
+/**
+ * Store-listing mode: swaps the mock backend's design seed for a fuller, more
+ * lifelike one and runs the account as premium, so no screen shows a quota
+ * banner or an ad slot. Only meaningful alongside `USE_MOCK_DATA`.
+ *
+ * Set `EXPO_PUBLIC_DEMO_SHOWCASE=true` when capturing screenshots. It exists so
+ * generating store assets never means editing the seed by hand and remembering
+ * to put it back — see `store-assets/README.md`.
+ */
+export const DEMO_SHOWCASE = USE_MOCK_DATA && extra.demoShowcase === true;
 
 /**
  * Where receipt OCR runs.

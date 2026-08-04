@@ -15,3 +15,5 @@ supabase/.temp/
 
 expo-env.d.ts
 # @end expo-cli
+# Store asset captures: raw device frames, regenerated on demand.
+store-assets/.raw/

@@ -1,3 +1,4 @@
+import { DEMO_SHOWCASE } from '@/constants/config';
 import type {
   BillingPeriod,
   ItemKind,
@@ -40,8 +41,11 @@ export const mockProfile: Profile = {
   display_name: 'Adi',
   locale: 'en',
   currency: 'SAR',
-  plan_tier: 'free',
-  premium_until: null,
+  // Showcase runs as premium so the quota banner and rewarded-ad card fall away.
+  // Not vanity: the free tier caps at 4 items, and a store screenshot showing a
+  // full vault beside "3 of 4 items used" reads as a bug.
+  plan_tier: DEMO_SHOWCASE ? 'premium' : 'free',
+  premium_until: DEMO_SHOWCASE ? isoStamp(328) : null,
   push_token: null,
   warranty_reminders: true,
   renewal_reminders: true,
@@ -139,6 +143,46 @@ const SEED: SeedRow[] = [
   },
 ];
 
+/**
+ * Store-listing data set, used when `EXPO_PUBLIC_DEMO_SHOWCASE=true`.
+ *
+ * Separate from `SEED` rather than replacing it: that one exists to put every
+ * countdown tier on screen at once for design review, and a set tuned for
+ * screenshots would quietly destroy that. This one optimises for a different
+ * thing — a vault that looks lived in, across enough merchants and categories
+ * that no list reads as thin, with the warranty and renewal dates spread so the
+ * urgency colours vary down the screen instead of banding.
+ *
+ * Amounts are SAR throughout: mixing currencies across a single user's vault
+ * would look like a bug in a screenshot, not like a feature.
+ */
+const SHOWCASE_SEED: SeedRow[] = [
+  // ── Receipts ──────────────────────────────────────────────────────────────
+  { id: 'sc-starbucks', kind: 'receipt', title: 'Starbucks', secondary: 'Restaurant', amount: 42.5, purchasedDaysAgo: 1 },
+  { id: 'sc-carrefour', kind: 'receipt', title: 'Carrefour', secondary: 'Groceries', amount: 486.2, purchasedDaysAgo: 2 },
+  { id: 'sc-apple', kind: 'receipt', title: 'Apple Store', secondary: 'Electronics', amount: 4299, purchasedDaysAgo: 5 },
+  { id: 'sc-ikea', kind: 'receipt', title: 'IKEA', secondary: 'Furniture', amount: 1847.5, purchasedDaysAgo: 12 },
+  { id: 'sc-zara', kind: 'receipt', title: 'Zara', secondary: 'Clothing', amount: 799, purchasedDaysAgo: 19 },
+  { id: 'sc-nike', kind: 'receipt', title: 'Nike', secondary: 'Sports', amount: 649, purchasedDaysAgo: 31 },
+  { id: 'sc-noon', kind: 'receipt', title: 'Noon', secondary: 'Home', amount: 329, purchasedDaysAgo: 44 },
+
+  // ── Warranties — spread across the urgency tiers ──────────────────────────
+  // purchasedDaysAgo + expiresInDays ≈ durationMonths × 30.4, so the detail
+  // screen's progress bar and its day count agree with each other.
+  { id: 'sc-tv', kind: 'warranty', title: 'Samsung 65" QLED TV', secondary: 'Extra', amount: 5499, purchasedDaysAgo: 722, warranty: { expiresInDays: 8, durationMonths: 24 } },
+  { id: 'sc-macbook', kind: 'warranty', title: 'MacBook Pro 14"', secondary: 'Apple Store', amount: 9299, purchasedDaysAgo: 319, warranty: { expiresInDays: 46, durationMonths: 12 } },
+  { id: 'sc-dyson', kind: 'warranty', title: 'Dyson V15 Detect', secondary: 'Jarir Bookstore', amount: 2749, purchasedDaysAgo: 603, warranty: { expiresInDays: 127, durationMonths: 24 } },
+  { id: 'sc-washer', kind: 'warranty', title: 'LG Washing Machine', secondary: 'Extra', amount: 2199, purchasedDaysAgo: 518, warranty: { expiresInDays: 212, durationMonths: 24 } },
+  { id: 'sc-sony', kind: 'warranty', title: 'Sony WH-1000XM5', secondary: 'Noon', amount: 1399, purchasedDaysAgo: 56, warranty: { expiresInDays: 309, durationMonths: 12 } },
+
+  // ── Subscriptions ─────────────────────────────────────────────────────────
+  { id: 'sc-netflix', kind: 'subscription', title: 'Netflix Premium', secondary: 'Entertainment', amount: 69, purchasedDaysAgo: 28, subscription: { period: 'monthly', renewsInDays: 2 } },
+  { id: 'sc-spotify', kind: 'subscription', title: 'Spotify Family', secondary: 'Entertainment', amount: 29.99, purchasedDaysAgo: 19, subscription: { period: 'monthly', renewsInDays: 11 } },
+  { id: 'sc-icloud', kind: 'subscription', title: 'iCloud+ 200GB', secondary: 'Services', amount: 11.99, purchasedDaysAgo: 12, subscription: { period: 'monthly', renewsInDays: 18 } },
+  { id: 'sc-adobe', kind: 'subscription', title: 'Adobe Creative Cloud', secondary: 'Services', amount: 239, purchasedDaysAgo: 5, subscription: { period: 'monthly', renewsInDays: 25 } },
+  { id: 'sc-prime', kind: 'subscription', title: 'Amazon Prime', secondary: 'Services', amount: 199, purchasedDaysAgo: 298, subscription: { period: 'yearly', renewsInDays: 67 } },
+];
+
 export type MockTables = {
   items: VaultItem[];
   warranties: Warranty[];
@@ -150,8 +194,9 @@ export function buildSeed(): MockTables {
   const items: VaultItem[] = [];
   const warranties: Warranty[] = [];
   const subscriptions: Subscription[] = [];
+  const rows = DEMO_SHOWCASE ? SHOWCASE_SEED : SEED;
 
-  SEED.forEach((row, index) => {
+  rows.forEach((row, index) => {
     items.push({
       id: row.id,
       user_id: MOCK_USER_ID,
@@ -167,8 +212,8 @@ export function buildSeed(): MockTables {
       ocr_raw: null,
       ocr_confidence: null,
       // Descending order in the lists follows this, so later entries read as newer.
-      created_at: isoStamp(-(SEED.length - index)),
-      updated_at: isoStamp(-(SEED.length - index)),
+      created_at: isoStamp(-(rows.length - index)),
+      updated_at: isoStamp(-(rows.length - index)),
     });
 
     if (row.warranty) {

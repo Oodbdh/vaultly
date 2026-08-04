@@ -32,6 +32,7 @@ const config: ExpoConfig = {
     admobRewardedAndroid: process.env.EXPO_PUBLIC_ADMOB_REWARDED_ANDROID,
     // Forces the in-memory backend even when Supabase keys are present.
     useMockData: process.env.EXPO_PUBLIC_USE_MOCK_DATA === 'true',
+    demoShowcase: process.env.EXPO_PUBLIC_DEMO_SHOWCASE === 'true',
     eas: {
   projectId:
     process.env.EAS_PROJECT_ID ??
