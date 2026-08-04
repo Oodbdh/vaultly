@@ -213,7 +213,13 @@ export function SubscriptionCard({
           )}
         </View>
 
-        <View style={{ flex: 1, gap: 2 }}>
+        {/* `flex: 1` here meant flexBasis 0, so the name column shrank to
+            whatever the countdown pill left over. The pill is the widest thing
+            on the row - "Renews in 67 days" - and took roughly 200dp of a
+            296dp card, leaving about 24dp: enough for "Amaz...". The name is
+            the point of the card, so it gets a real floor and the pill is the
+            side that gives way. */}
+        <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 'auto', minWidth: 96, gap: 2 }}>
           <Text
             style={[type.body, { color: colors.text, fontWeight: '700', textAlign }]}
             numberOfLines={1}
@@ -232,9 +238,15 @@ export function SubscriptionCard({
             paddingVertical: 6,
             paddingHorizontal: spacing.md,
             alignItems: 'center',
+            flexShrink: 1,
           }}
         >
-          <Text style={{ color: u.fg, fontWeight: '800', fontSize: locale === 'ar' ? 15 : 14 }}>
+          <Text
+            style={{ color: u.fg, fontWeight: '800', fontSize: locale === 'ar' ? 15 : 14 }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
             {countdownLabel(t, days, 'subscription')}
           </Text>
         </View>

@@ -36,7 +36,12 @@ export function SummaryCard({
           borderWidth: 1,
           borderColor: colors.border,
           borderRadius: radius.lg,
-          padding: spacing.md,
+          // Horizontal padding is `sm`, not `md`. Three tiles across a phone
+          // left about 77dp for text, and "subscriptions" needs ~80 at this
+          // size, so the line broke inside the word. `adjustsFontSizeToFit`
+          // below did not rescue it - on Android it shrinks to fit the line
+          // count, not to avoid a break - so the width has to be real.
+          paddingHorizontal: spacing.sm,
           paddingVertical: spacing.lg,
           gap: spacing.sm,
         },
@@ -76,6 +81,11 @@ export function SummaryCard({
         ) : null}
       </View>
 
+      {/* Shrink to fit rather than wrap mid-word. Three tiles across a phone
+          leaves roughly 77dp of text width, and a single long word - English
+          "subscriptions", German "Einträgen" - exceeds it, so the line broke
+          inside the word and rendered "Active subsc / riptions". Same treatment
+          the value above already uses. */}
       <Text
         style={[
           type.caption,
@@ -87,6 +97,8 @@ export function SummaryCard({
           },
         ]}
         numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
       >
         {label}
       </Text>

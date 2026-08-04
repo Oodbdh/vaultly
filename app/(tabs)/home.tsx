@@ -77,7 +77,17 @@ export default function Home() {
         }}
       >
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.title, { color: colors.text, textAlign }]} numberOfLines={1}>
+          {/* The greeting carries a name and a trailing emoji, and shares the
+              row with the language switcher, so at title size it ran out of
+              width and ellipsed the name away - "Good morning, ...", which
+              reads as a bug rather than a greeting. Shrink to fit instead: the
+              name is the part that must survive. */}
+          <Text
+            style={[type.title, { color: colors.text, textAlign }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
+          >
             {name ? t(`greeting.${greetingKey()}`, { name }) : t('greeting.fallback')}
           </Text>
           <Text style={[type.caption, { color: colors.textMuted, textAlign }]}>
