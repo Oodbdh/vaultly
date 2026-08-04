@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { CustomerInfo } from 'react-native-purchases';
 
+import { DEMO_SHOWCASE } from '@/constants/config';
 import { getCustomerInfo, hasPremium, onCustomerInfoChange } from '@/services/purchases';
 
 type EntitlementState = {
@@ -18,12 +19,21 @@ type EntitlementState = {
  */
 export const useEntitlementStore = create<EntitlementState>((set) => ({
   customerInfo: null,
-  isPremium: false,
-  loading: true,
+  // Showcase mode has no store account to ask, and RevenueCat would answer
+  // "not premium" — which would put the quota banner and the rewarded-ad card
+  // back on every screenshot. The mock profile's `plan_tier` cannot do this on
+  // its own: every gate in the app reads this flag, not the profile row.
+  isPremium: DEMO_SHOWCASE,
+  loading: !DEMO_SHOWCASE,
 
-  setInfo: (info) => set({ customerInfo: info, isPremium: hasPremium(info), loading: false }),
+  setInfo: (info) =>
+    set({ customerInfo: info, isPremium: DEMO_SHOWCASE || hasPremium(info), loading: false }),
 
   refresh: async () => {
+    if (DEMO_SHOWCASE) {
+      set({ isPremium: true, loading: false });
+      return;
+    }
     const info = await getCustomerInfo();
     set({ customerInfo: info, isPremium: hasPremium(info), loading: false });
   },
