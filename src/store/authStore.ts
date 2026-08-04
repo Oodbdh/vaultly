@@ -110,7 +110,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   updateEmail: async (email) => {
-    if (USE_MOCK_DATA) return {};
+    // The mock backend cannot send mail, so returning `{}` here reported
+    // "verification link sent" for an operation that never left the device —
+    // indistinguishable, from the user's side, from a broken mail server. Every
+    // other mock write can be faked honestly because the result is local; this
+    // one cannot. Fail loudly instead.
+    //
+    // The string is deliberately untranslated: it is unreachable in a shipped
+    // build, where Supabase credentials are always present and USE_MOCK_DATA is
+    // therefore false.
+    if (USE_MOCK_DATA) {
+      if (__DEV__) {
+        console.warn(
+          '[vaultly] updateEmail called with USE_MOCK_DATA on — no email was sent. ' +
+            'Restart Metro without EXPO_PUBLIC_USE_MOCK_DATA to exercise the real flow.',
+        );
+      }
+      return { error: 'Email change needs the live backend. Mock mode cannot send mail.' };
+    }
+
     const { error } = await supabase.auth.updateUser(
       { email },
       // Same callback the signup link uses; `authCallback.ts` already accepts
