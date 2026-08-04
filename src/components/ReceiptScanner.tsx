@@ -114,36 +114,47 @@ export function ReceiptScanner({
         />
       ) : null}
 
-      <View style={StyleSheet.absoluteFill}>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          {/* dim everything outside the capture window */}
-          <View style={{ flex: 1, alignSelf: 'stretch', backgroundColor: 'rgba(0,0,0,0.55)' }} />
-          <View style={{ flexDirection: 'row', alignSelf: 'stretch', height: frameHeight }}>
-            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} />
-            <View
-              style={{
-                width: frameWidth,
-                borderRadius: radius.lg,
-                borderWidth: 2,
-                borderColor: 'rgba(255,255,255,0.9)',
-              }}
-            />
-            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} />
-          </View>
+      {/*
+        Nothing here paints over the preview. The overlay used to dim
+        everything outside the capture window with four rgba(0,0,0,0.55) panes,
+        which meant most of the screen was 55% black and the camera looked
+        broken rather than framed. The frame is a *guide*, not a crop - the
+        captured photo has always been the full sensor frame - so hiding the
+        rest of the image bought nothing and cost the user the ability to see
+        what they were aiming at.
+
+        Legibility now comes from shadows on the marks and text themselves,
+        never from darkening the image behind them.
+      */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <View
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+          pointerEvents="box-none"
+        >
+          <View style={{ flex: 1 }} pointerEvents="none" />
+          <GuideFrame width={frameWidth} height={frameHeight} />
           <View
             style={{
               flex: 1,
               alignSelf: 'stretch',
-              backgroundColor: 'rgba(0,0,0,0.55)',
               alignItems: 'center',
               paddingTop: spacing.xl,
               gap: spacing.xl,
             }}
+            pointerEvents="box-none"
           >
             <Text
               style={[
                 type.body,
-                { color: '#fff', textAlign: 'center', paddingHorizontal: spacing.xl },
+                {
+                  color: '#fff',
+                  textAlign: 'center',
+                  paddingHorizontal: spacing.xl,
+                  // Carries the text over a bright receipt without dimming it.
+                  textShadowColor: 'rgba(0,0,0,0.85)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 4,
+                },
               ]}
             >
               {t('scan.alignHint')}
@@ -178,6 +189,56 @@ export function ReceiptScanner({
           </View>
         </View>
       </View>
+    </View>
+  );
+}
+
+/**
+ * Corner markers plus a hairline outline — the whole of the guide.
+ *
+ * A guide drawn on an undimmed preview has to survive being shown against a
+ * white receipt, which is the usual case and the one where plain white marks
+ * disappear. Each mark therefore carries its own drop shadow rather than
+ * relying on a darkened backdrop. The outline is deliberately faint; the
+ * corners are what the eye actually aligns to.
+ */
+function GuideFrame({ width, height }: { width: number; height: number }) {
+  const ARM = 30;
+  const THICK = 3;
+  const shadow = {
+    shadowColor: '#000',
+    shadowOpacity: 0.6,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 4,
+  } as const;
+
+  const corners = [
+    { top: 0, start: 0, borderTopWidth: THICK, borderStartWidth: THICK, borderTopStartRadius: radius.md },
+    { top: 0, end: 0, borderTopWidth: THICK, borderEndWidth: THICK, borderTopEndRadius: radius.md },
+    { bottom: 0, start: 0, borderBottomWidth: THICK, borderStartWidth: THICK, borderBottomStartRadius: radius.md },
+    { bottom: 0, end: 0, borderBottomWidth: THICK, borderEndWidth: THICK, borderBottomEndRadius: radius.md },
+  ];
+
+  return (
+    <View style={{ width, height }} pointerEvents="none">
+      <View
+        style={[
+          StyleSheet.absoluteFillObject,
+          { borderRadius: radius.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.45)' },
+          shadow,
+        ]}
+      />
+      {corners.map((c, i) => (
+        <View
+          key={i}
+          style={[
+            { position: 'absolute', width: ARM, height: ARM, borderColor: '#fff' },
+            c,
+            shadow,
+          ]}
+        />
+      ))}
     </View>
   );
 }

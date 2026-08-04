@@ -150,7 +150,17 @@ export default function NewItem() {
   if (step === 'capture') {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
-        <SafeAreaView edges={['top']} style={{ backgroundColor: '#000' }}>
+        {/* The scanner is laid out first and the header floats over it, so the
+            preview runs the full height of the screen. As a sibling above the
+            camera this bar was an opaque black strip roughly 250px tall - a
+            quarter of the viewfinder spent on a title. Transparent now, with
+            the label and close icon carrying their own shadows. */}
+        <ReceiptScanner onCaptured={onCaptured} onPickFromLibrary={pickFromLibrary} />
+        <SafeAreaView
+          edges={['top']}
+          style={{ position: 'absolute', top: 0, start: 0, end: 0 }}
+          pointerEvents="box-none"
+        >
           <View
             style={{
               flexDirection: 'row',
@@ -159,21 +169,43 @@ export default function NewItem() {
               paddingHorizontal: spacing.lg,
               paddingBottom: spacing.md,
             }}
+            pointerEvents="box-none"
           >
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t('common.close')}
               onPress={() => router.back()}
-              style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+              style={{
+                width: 44,
+                height: 44,
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#000',
+                shadowOpacity: 0.6,
+                shadowRadius: 4,
+                shadowOffset: { width: 0, height: 1 },
+                elevation: 4,
+              }}
             >
               <Ionicons name="close" size={26} color="#fff" />
             </Pressable>
-            <Text style={[type.heading, { color: '#fff', flex: 1, textAlign }]}>
+            <Text
+              style={[
+                type.heading,
+                {
+                  color: '#fff',
+                  flex: 1,
+                  textAlign,
+                  textShadowColor: 'rgba(0,0,0,0.85)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 4,
+                },
+              ]}
+            >
               {t('scan.title')}
             </Text>
           </View>
         </SafeAreaView>
-        <ReceiptScanner onCaptured={onCaptured} onPickFromLibrary={pickFromLibrary} />
       </View>
     );
   }
