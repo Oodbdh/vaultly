@@ -35,6 +35,49 @@ export function deviceLocale(): AppLocale {
   return 'en';
 }
 
+/** ISO 4217 is three letters. Anything else is not a currency we can format. */
+const ISO_4217 = /^[A-Z]{3}$/;
+
+let cachedCurrency: string | null = null;
+
+/**
+ * The currency of the device's region — USD in the US, EUR in Germany, JPY in
+ * Japan, and so on.
+ *
+ * This is only ever a **fallback**, used when a record carries no currency of
+ * its own. A receipt's own currency is a fact about the purchase and always
+ * wins: a euro invoice stays in euros no matter where the phone is.
+ *
+ * Note this is region, not language — a device set to English in Japan reports
+ * JPY, which is the desired answer. `SAR` remains the last resort, since the
+ * app's own pricing and jurisdiction are Saudi.
+ *
+ * Cached because the value cannot change without the OS restarting the app,
+ * and it is read on every amount that renders.
+ */
+export function deviceCurrency(): string {
+  if (cachedCurrency) return cachedCurrency;
+  for (const loc of Localization.getLocales()) {
+    const code = loc.currencyCode?.toUpperCase();
+    if (code && ISO_4217.test(code)) {
+      cachedCurrency = code;
+      return code;
+    }
+  }
+  cachedCurrency = 'SAR';
+  return cachedCurrency;
+}
+
+/**
+ * The currency to render an amount in: the record's own, else the device's.
+ * Accepts `null` because that is what the database and the OCR extractor return
+ * when the currency is genuinely unknown.
+ */
+export function resolveCurrency(currency?: string | null): string {
+  const code = currency?.trim().toUpperCase();
+  return code && ISO_4217.test(code) ? code : deviceCurrency();
+}
+
 export function isRTL(locale: string): boolean {
   return languageMeta(locale).rtl;
 }

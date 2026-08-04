@@ -22,14 +22,16 @@ export function InvoiceCard({
   merchant,
   purchaseDate,
   amount,
-  currency = 'SAR',
+  // No default — `formatCurrency` falls back to the device's regional currency,
+  // so an invoice with no recorded currency renders in the local one.
+  currency,
   thumbnailUri,
   onPress,
 }: {
   merchant: string;
   purchaseDate: string | null;
   amount: number | null;
-  currency?: string;
+  currency?: string | null;
   thumbnailUri?: string | null;
   onPress?: () => void;
 }) {

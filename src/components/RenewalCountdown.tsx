@@ -27,13 +27,14 @@ const CYCLE_DAYS: Record<BillingPeriod, number> = {
 export function RenewalCountdown({
   nextRenewal,
   amount,
-  currency = 'SAR',
+  // See InvoiceCard: the device's regional currency is the fallback.
+  currency,
   period,
   autoRenews = true,
 }: {
   nextRenewal: string;
   amount: number;
-  currency?: string;
+  currency?: string | null;
   period: BillingPeriod;
   autoRenews?: boolean;
 }) {

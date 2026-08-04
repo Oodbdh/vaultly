@@ -1,7 +1,7 @@
 import { I18nManager, type TextStyle, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { isRTL } from './index';
+import { isRTL, resolveCurrency } from './index';
 import { languageMeta } from './languages';
 
 /**
@@ -36,10 +36,21 @@ export function useDirection() {
   };
 }
 
-export function formatCurrency(amount: number, locale: string, currency = 'SAR'): string {
+/**
+ * `currency` is the record's own code and takes precedence; when it is absent
+ * or unrecognised the device's regional currency is used rather than a
+ * hard-coded one. Takes `null` because that is what the database column and the
+ * OCR extractor return when the currency is unknown — a default parameter would
+ * not catch it, since defaults only apply to `undefined`.
+ */
+export function formatCurrency(
+  amount: number,
+  locale: string,
+  currency?: string | null,
+): string {
   return new Intl.NumberFormat(languageMeta(locale).intlTag, {
     style: 'currency',
-    currency,
+    currency: resolveCurrency(currency),
     maximumFractionDigits: 2,
   }).format(amount);
 }

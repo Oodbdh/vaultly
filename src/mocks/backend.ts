@@ -22,6 +22,7 @@ import type {
   Warranty,
 } from '@/lib/database.types';
 import { QuotaExceededError } from '@/lib/errors';
+import { resolveCurrency } from '@/i18n';
 import type { ListItem, ReminderKind, ReminderTarget } from '@/lib/types';
 import { buildSeed, isoDay, MOCK_USER_ID, mockProfile, type MockTables } from './seed';
 
@@ -202,7 +203,7 @@ export async function mockCreateItem(input: MockNewItem): Promise<VaultItem> {
     kind: input.kind ?? 'receipt',
     merchant_name: input.merchantName,
     total_amount: input.totalAmount,
-    currency: input.currency ?? 'SAR',
+    currency: resolveCurrency(input.currency),
     purchase_date: input.purchaseDate,
     category: input.category ?? null,
     notes: input.notes ?? null,
@@ -252,7 +253,7 @@ export async function mockCreateSubscription(input: {
     kind: 'subscription',
     merchant_name: input.name,
     total_amount: input.amount,
-    currency: input.currency ?? 'SAR',
+    currency: resolveCurrency(input.currency),
     purchase_date: isoDay(0),
     category: input.merchant ?? null,
     notes: null,
@@ -273,7 +274,7 @@ export async function mockCreateSubscription(input: {
     user_id: MOCK_USER_ID,
     name: input.name,
     amount: input.amount,
-    currency: input.currency ?? 'SAR',
+    currency: resolveCurrency(input.currency),
     period: input.period,
     next_renewal: input.nextRenewal,
     auto_renews: true,

@@ -75,15 +75,54 @@ export function RewardedSlotCard() {
         </View>
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-        <Text style={[type.caption, { color: colors.textMuted, flex: 1, textAlign }]}>
+      {/* Caption and action share a line when both fit, and the action drops to
+          its own full-width line when they do not.
+
+          `flex: 1` on the caption used to mean flexBasis 0, so the caption
+          collapsed towards nothing while the button — sized to a label that
+          runs from 34 characters in Arabic to 46 in French — took the row and
+          overflowed the card. Arabic has the shortest string of the five, which
+          is the only reason it looked balanced. Giving the caption an `auto`
+          basis with a floor, and letting the row wrap, makes the result depend
+          on the space actually available rather than on how terse the language
+          happens to be. */}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          flexWrap: 'wrap',
+        }}
+      >
+        <Text
+          style={[
+            type.caption,
+            {
+              color: colors.textMuted,
+              flexGrow: 1,
+              flexShrink: 1,
+              flexBasis: 'auto',
+              minWidth: 110,
+              textAlign,
+            },
+          ]}
+        >
           {t('settings.slotsUsed', { used: quota.used, limit: quota.limit })}
         </Text>
         {/* Confirmation wins over the button: the quota refetch lands a moment
             after the grant, so `canWatch` is briefly still true. No button at
             all once the reward is claimed — the offer is gone for good. */}
         {justGranted ? (
-          <Text style={{ color: colors.success, fontWeight: '600', fontSize: 14 }}>
+          <Text
+            numberOfLines={2}
+            style={{
+              color: colors.success,
+              fontWeight: '600',
+              fontSize: 14,
+              flexShrink: 1,
+              textAlign,
+            }}
+          >
             {t('quota.bonusGranted')}
           </Text>
         ) : canWatch ? (
@@ -94,15 +133,26 @@ export function RewardedSlotCard() {
             style={({ pressed }) => ({
               minHeight: 44,
               paddingHorizontal: spacing.lg,
+              paddingVertical: spacing.sm,
               borderRadius: radius.md,
               borderWidth: 1,
               borderColor: colors.border,
               alignItems: 'center',
               justifyContent: 'center',
+              flexShrink: 1,
+              maxWidth: '100%',
               opacity: pressed ? 0.85 : 1,
             })}
           >
-            <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 14 }}>
+            <Text
+              numberOfLines={2}
+              style={{
+                color: colors.primary,
+                fontWeight: '600',
+                fontSize: 14,
+                textAlign: 'center',
+              }}
+            >
               {quota.adLoading ? t('quota.watchAdLoading') : t('quota.watchAd')}
             </Text>
           </Pressable>

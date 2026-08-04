@@ -167,7 +167,10 @@ export function normalise(raw: Partial<ReceiptExtraction>): ReceiptExtraction {
     productName: str(raw.productName),
     merchantName: typeof raw.merchantName === 'string' ? raw.merchantName.trim() || null : null,
     totalAmount: num(raw.totalAmount),
-    currency: typeof raw.currency === 'string' ? raw.currency.toUpperCase() : 'SAR',
+    // Null, not a default. The extractor reporting no currency is not evidence
+    // of a Saudi receipt; forcing SAR here is what made every scan look Saudi
+    // regardless of the invoice. The caller falls back to the device's region.
+    currency: typeof raw.currency === 'string' ? raw.currency.toUpperCase() : null,
     purchaseDate: date(raw.purchaseDate),
     warrantyExpiry: date(raw.warrantyExpiry),
     warrantyMonths: num(raw.warrantyMonths),

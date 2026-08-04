@@ -18,6 +18,7 @@ import {
   type WarrantyChoice,
 } from '@/components/WarrantyDurationPicker';
 import { colors, radius, spacing, typeScale } from '@/theme';
+import { resolveCurrency } from '@/i18n';
 import { useDirection } from '@/i18n/rtl';
 import { useCreateItem } from '@/hooks/useItems';
 import { useItemQuota } from '@/hooks/useItemQuota';
@@ -133,7 +134,8 @@ export default function NewItem() {
         merchantName: merchant.trim() || t('item.merchant'),
         category: extraction?.category ?? null,
         totalAmount: total ? Number(total) : null,
-        currency: extraction?.currency ?? 'SAR',
+        // The invoice's own currency wins; otherwise the device's region.
+        currency: resolveCurrency(extraction?.currency),
         purchaseDate: purchaseDate || null,
         localImageUri: imageUri,
         warranty: expiresOn

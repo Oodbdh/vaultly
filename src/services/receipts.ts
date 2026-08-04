@@ -11,6 +11,7 @@ import type {
 import { QuotaExceededError } from '@/lib/errors';
 import type { ListItem, ReminderKind, ReminderTarget } from '@/lib/types';
 import { addBillingCycle, todayISO } from '@/lib/dateMath';
+import { resolveCurrency } from '@/i18n';
 import {
   mockCreateItem,
   mockCreateSubscription,
@@ -218,7 +219,7 @@ export async function createItem(userId: string, input: NewItemInput): Promise<V
       kind: input.kind ?? 'receipt',
       merchant_name: input.merchantName,
       total_amount: input.totalAmount,
-      currency: input.currency ?? 'SAR',
+      currency: resolveCurrency(input.currency),
       purchase_date: input.purchaseDate,
       category: input.category ?? null,
       notes: input.notes ?? null,
@@ -273,7 +274,7 @@ export async function createSubscription(
       subscriptionId: item.id,
       name: input.name,
       nextRenewal: input.nextRenewal,
-      amountLabel: `${input.amount} ${input.currency ?? 'SAR'}`,
+      amountLabel: `${input.amount} ${resolveCurrency(input.currency)}`,
     });
     return item;
   }
@@ -289,7 +290,7 @@ export async function createSubscription(
       kind: 'subscription',
       merchant_name: input.name,
       total_amount: input.amount,
-      currency: input.currency ?? 'SAR',
+      currency: resolveCurrency(input.currency),
       purchase_date: new Date().toISOString().slice(0, 10),
       category: input.merchant ?? null,
       notes: null,
@@ -311,7 +312,7 @@ export async function createSubscription(
     user_id: userId,
     name: input.name,
     amount: input.amount,
-    currency: input.currency ?? 'SAR',
+    currency: resolveCurrency(input.currency),
     period: input.period,
     next_renewal: input.nextRenewal,
     auto_renews: true,
@@ -322,7 +323,7 @@ export async function createSubscription(
     subscriptionId: data.id,
     name: input.name,
     nextRenewal: input.nextRenewal,
-    amountLabel: `${input.amount} ${input.currency ?? 'SAR'}`,
+    amountLabel: `${input.amount} ${resolveCurrency(input.currency)}`,
   });
 
   return data;

@@ -44,17 +44,27 @@ export function QuotaBanner() {
               ? t('quota.limitBody')
               : t('quota.limitBodyFinal', { limit: quota.limit })}
           </Text>
-          <View style={{ flexDirection: 'row', gap: spacing.md }}>
+          {/* `alignItems: stretch` (the default) is what keeps the two the same
+              height once one of them wraps; `flexBasis: 0` with `minWidth: 0`
+              is what keeps them the same *width*. Without the explicit basis a
+              long label inflates its button's intrinsic width and `flex: 1`
+              divides the remainder, so the pair came out lopsided in every
+              language whose CTA is longer than Arabic's. */}
+          <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: spacing.md }}>
             {quota.gate.allowed === false && quota.gate.canWatchAd ? (
               <Button
                 variant="secondary"
-                style={{ flex: 1 }}
+                style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}
                 disabled={quota.adLoading}
                 label={quota.adLoading ? t('quota.watchAdLoading') : t('quota.watchAd')}
                 onPress={() => void quota.watchAdForSlot()}
               />
             ) : null}
-            <Button style={{ flex: 1 }} label={t('paywall.cta')} onPress={quota.openPaywall} />
+            <Button
+              style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}
+              label={t('paywall.cta')}
+              onPress={quota.openPaywall}
+            />
           </View>
         </>
       ) : null}
